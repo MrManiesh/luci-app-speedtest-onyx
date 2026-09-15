@@ -1,0 +1,48 @@
+{
+    "luci-app-speedtest-onyx": {
+        "description": "Grant access to Speedtest runner, status monitor and configuration",
+        "read": {
+            "file": {
+                "/usr/libexec/speedtest-action.sh": [
+                    "exec"
+                ],
+                "/usr/libexec/speedtest-servers.sh": [
+                    "exec"
+                ],
+                "/tmp/speedtest_state.json": [
+                    "read"
+                ],
+                "/etc/speedtest_history.json": [
+                    "read"
+                ]
+            },
+            "ubus": {
+                "file": [
+                    "read",
+                    "exec"
+                ]
+            },
+            "uci": [
+                "speedtest"
+            ]
+        },
+        "write": {
+            "file": {
+                "/usr/libexec/speedtest-action.sh": [
+                    "exec"
+                ],
+                "/usr/libexec/speedtest-installer.sh": [
+                    "exec"
+                ]
+            },
+            "ubus": {
+                "file": [
+                    "exec"
+                ]
+            },
+            "uci": [
+                "speedtest"
+            ]
+        }
+    }
+}

@@ -1,0 +1,11 @@
+# OpenWrt package artifacts
+*.ipk
+*.apk
+*.tar.gz
+*.tgz
+/build_dir/
+/bin/
+/dist/
+/tmp/
+.vscode/
+.idea/

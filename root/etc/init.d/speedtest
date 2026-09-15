@@ -1,0 +1,51 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+USE_PROCD=1
+
+init_state() {
+	rm -f /tmp/speedtest.lock
+	if [ ! -f /tmp/speedtest_state.json ]; then
+		echo '{"status":"idle","stage":"idle","progress":0,"ping":0,"jitter":0,"download_speed":0,"upload_speed":0}' > /tmp/speedtest_state.json
+	fi
+	chmod 0666 /tmp/speedtest_state.json 2>/dev/null || true
+
+	if [ ! -f /etc/speedtest_history.json ]; then
+		echo "[]" > /etc/speedtest_history.json
+		chmod 0666 /etc/speedtest_history.json 2>/dev/null || true
+	fi
+}
+
+setup_cron() {
+	local auto_enabled=$(uci -q get speedtest.main.auto_test_enabled)
+	local auto_cron=$(uci -q get speedtest.main.auto_test_cron)
+
+	sed -i '/speedtest-runner.sh/d' /etc/crontabs/root 2>/dev/null
+
+	if [ "$auto_enabled" = "1" ] && [ -n "$auto_cron" ]; then
+		mkdir -p /etc/crontabs
+		echo "$auto_cron /usr/libexec/speedtest-runner.sh >/dev/null 2>&1" >> /etc/crontabs/root
+		/etc/init.d/cron restart 2>/dev/null || true
+	fi
+}
+
+start_service() {
+	init_state
+	setup_cron
+}
+
+stop_service() {
+	sed -i '/speedtest-runner.sh/d' /etc/crontabs/root 2>/dev/null
+	/etc/init.d/cron restart 2>/dev/null || true
+	if [ -f /tmp/speedtest.lock ]; then
+		pid=$(cat /tmp/speedtest.lock 2>/dev/null)
+		[ -n "$pid" ] && kill -9 "$pid" 2>/dev/null
+		rm -f /tmp/speedtest.lock
+	fi
+	killall -9 speedtest 2>/dev/null || true
+	killall -9 speedtest-go 2>/dev/null || true
+}
+
+reload_service() {
+	setup_cron
+}
