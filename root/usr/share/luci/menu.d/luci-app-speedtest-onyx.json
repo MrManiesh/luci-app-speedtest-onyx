@@ -1,0 +1,15 @@
+{
+    "admin/network/speedtest": {
+        "title": "Speed Test",
+        "order": 90,
+        "action": {
+            "type": "view",
+            "path": "speedtest/index"
+        },
+        "depends": {
+            "acl": [
+                "luci-app-speedtest-onyx"
+            ]
+        }
+    }
+}
