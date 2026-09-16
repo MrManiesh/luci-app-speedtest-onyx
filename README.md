@@ -81,12 +81,14 @@ luci-app-speedtest/
 
 ## 🚀 Installation (OpenWrt 24.10+ & ImmortalWrt)
 
-### Option 1: Direct 1-Line APK Install (Recommended)
-Run the following command over SSH on your router:
+### Option 1: Direct 1-Line APK Install (Stable Release)
+Run the following command over SSH on your router to install the latest stable version (**v1.1-r2**):
 
 ```sh
 cd /tmp && uclient-fetch -O luci-app-speedtest-onyx-1.1-r2.apk https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/download/v1.1-r2/luci-app-speedtest-onyx-1.1-r2.apk && apk add --allow-untrusted ./luci-app-speedtest-onyx-*.apk
 ```
+
+> 🧪 **Looking for experimental features?** Check out the [v1.2-r1 Beta Release](https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/tag/v1.2-r1) (includes experimental Fast.com tester support).
 
 ### Option 2: Manual Installation via SCP
 ```sh
