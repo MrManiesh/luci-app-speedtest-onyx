@@ -4,7 +4,7 @@
 
 ### Authentic Speedtest.net (Ookla) Onyx Dashboard for OpenWrt
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com)
+[![Version](https://img.shields.io/badge/version-1.1.0--r2-blue.svg)](https://github.com)
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-24.10%2B%20(apk)-success.svg)](https://openwrt.org)
 [![ImmortalWrt](https://img.shields.io/badge/ImmortalWrt-Compatible-success.svg)](https://immortalwrt.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -85,7 +85,7 @@ luci-app-speedtest/
 Run the following command over SSH on your router:
 
 ```sh
-cd /tmp && uclient-fetch -O luci-app-speedtest-onyx-1.1-r1.apk https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/download/v1.1-r1/luci-app-speedtest-onyx-1.1-r1.apk && apk add --allow-untrusted ./luci-app-speedtest-onyx-*.apk
+cd /tmp && uclient-fetch -O luci-app-speedtest-onyx-1.1-r2.apk https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/download/v1.1-r2/luci-app-speedtest-onyx-1.1-r2.apk && apk add --allow-untrusted ./luci-app-speedtest-onyx-*.apk
 ```
 
 ### Option 2: Manual Installation via SCP
@@ -165,6 +165,31 @@ You can also run diagnostics directly over SSH:
 
 ---
 
+## ⚠️ Disclaimer & Takedown Notice
+
+> **IMPORTANT**: This project is developed strictly for **educational, testing, research, and personal hobbyist purposes**. 
+> It is an independent open-source community extension and is **not** affiliated with, endorsed by, sponsored by, or officially associated with Ookla®, Speedtest.net, or any telecommunications carrier.
+> 
+> All trademarks, service marks, trade names, and brand names referenced in this repository (including Speedtest® and Ookla®) belong to their respective owners.
+> 
+> **Notice to Rights Holders**: If you believe that any file, asset, documentation, or code snippet in this repository infringes upon proprietary rights, contains confidential material, or should not be publicly hosted, please **open a GitHub Issue or contact the maintainer directly via Telegram**:
+>
+> 📬 **Telegram**: [t.me/Zeetron](https://t.me/Zeetron) (`@Zeetron`)
+
+---
+
+## 👤 Author & Developer Information
+
+<div align="center">
+
+| Role | Developer / Maintainer | Contact & Links |
+|:---|:---|:---|
+| 🚀 **Lead Developer & Maintainer** | **Manish Matwa Choudhary** | [![GitHub](https://img.shields.io/badge/GitHub-MrManiesh-181717?style=flat&logo=github&logoColor=white)](https://github.com/MrManiesh) [![Telegram](https://img.shields.io/badge/Telegram-@Zeetron-2CA5E0?style=flat&logo=telegram&logoColor=white)](https://t.me/Zeetron) |
+
+</div>
+
+---
+
 ## 📄 License
 
-Licensed under the Apache License 2.0.
+Licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
