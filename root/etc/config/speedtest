@@ -1,5 +1,6 @@
 config speedtest 'main'
 	option enabled '1'
+	option tester 'speedtest'
 	option server_id ''
 	option unit 'mbps'
 	option history_max '50'

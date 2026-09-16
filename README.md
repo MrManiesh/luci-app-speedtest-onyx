@@ -4,7 +4,7 @@
 
 ### Authentic Speedtest.net (Ookla) Onyx Dashboard for OpenWrt
 
-[![Version](https://img.shields.io/badge/version-1.1.0--r2-blue.svg)](https://github.com)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com)
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-24.10%2B%20(apk)-success.svg)](https://openwrt.org)
 [![ImmortalWrt](https://img.shields.io/badge/ImmortalWrt-Compatible-success.svg)](https://immortalwrt.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -17,6 +17,10 @@ A modern, responsive LuCI web dashboard extension designed to run official **Spe
 ---
 
 ## ✨ Features
+
+### 🌐 Multi-Tester Engine Support
+- **Dual Engine Choice**: Run benchmarks against either **Speedtest.net (Ookla)** or **Fast.com (Netflix)**.
+- **Netflix Open Connect CDN**: Native, zero-dependency Fast.com pipeline measuring low-latency streaming performance.
 
 ### 🎯 Authentic Speedtest.net Interface
 - **The Signature "GO" Button**: Centerpiece idle screen with multi-ring radar pulse animations.
@@ -85,7 +89,7 @@ luci-app-speedtest/
 Run the following command over SSH on your router:
 
 ```sh
-cd /tmp && uclient-fetch -O luci-app-speedtest-onyx-1.1-r2.apk https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/download/v1.1-r2/luci-app-speedtest-onyx-1.1-r2.apk && apk add --allow-untrusted ./luci-app-speedtest-onyx-*.apk
+cd /tmp && uclient-fetch -O luci-app-speedtest-onyx-1.2-r1.apk https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/download/v1.2-r1/luci-app-speedtest-onyx-1.2-r1.apk && apk add --allow-untrusted ./luci-app-speedtest-onyx-*.apk
 ```
 
 ### Option 2: Manual Installation via SCP

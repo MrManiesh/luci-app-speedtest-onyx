@@ -32,6 +32,9 @@ case "$1" in
 			[ -z "$ENGINE_VER" ] && ENGINE_VER=$("$SPEEDTEST_BIN" -v 2>&1 | head -n 1)
 		fi
 
+		CURRENT_TESTER=$(uci -q get speedtest.main.tester || echo "speedtest")
+		[ -z "$CURRENT_TESTER" ] && CURRENT_TESTER="speedtest"
+
 		IS_RUNNING="0"
 		if [ -f "$LOCK_FILE" ]; then
 			pid=$(cat "$LOCK_FILE" 2>/dev/null)
@@ -48,7 +51,7 @@ case "$1" in
 				H_ISP=$(jq -r '.[0].isp // empty' "$HISTORY_FILE" 2>/dev/null)
 				H_IP=$(jq -r '.[0].client_ip // empty' "$HISTORY_FILE" 2>/dev/null)
 				if [ -n "$H_ISP" ] || [ -n "$H_IP" ]; then
-					echo "{"isp":"${H_ISP:-Internet Connection}","ip":"$H_IP"}" > "$CLIENT_CACHE"
+					echo "{\"isp\":\"${H_ISP:-Internet Connection}\",\"ip\":\"$H_IP\"}" > "$CLIENT_CACHE"
 				fi
 			fi
 			if [ ! -f "$CLIENT_CACHE" ]; then
@@ -57,7 +60,7 @@ case "$1" in
 					if [ -n "$INFO" ]; then
 						Q_IP=$(echo "$INFO" | jq -r '.ip // empty' 2>/dev/null)
 						Q_ORG=$(echo "$INFO" | jq -r '.org // empty' 2>/dev/null | sed -E 's/^AS[0-9]+ //')
-						[ -n "$Q_IP" ] && echo "{"isp":"${Q_ORG:-Broadband}","ip":"$Q_IP"}" > "$CLIENT_CACHE"
+						[ -n "$Q_IP" ] && echo "{\"isp\":\"${Q_ORG:-Broadband}\",\"ip\":\"$Q_IP\"}" > "$CLIENT_CACHE"
 					fi
 				) </dev/null >/dev/null 2>&1 &
 			fi
@@ -75,6 +78,7 @@ case "$1" in
 		cat << EOF
 {
   "running": $IS_RUNNING,
+  "tester": "$CURRENT_TESTER",
   "client": $CLIENT_JSON,
   "engine": {
     "installed": $ENGINE_INSTALLED,
@@ -89,6 +93,10 @@ EOF
 
 	start)
 		SERVER_ID="$2"
+		TESTER="$3"
+		[ -z "$TESTER" ] && TESTER=$(uci -q get speedtest.main.tester || echo "speedtest")
+		[ -z "$TESTER" ] && TESTER="speedtest"
+
 		if [ -f "$LOCK_FILE" ]; then
 			pid=$(cat "$LOCK_FILE" 2>/dev/null)
 			if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
@@ -97,10 +105,12 @@ EOF
 			fi
 		fi
 
-		SPEEDTEST_BIN=$(find_speedtest)
-		if [ -z "$SPEEDTEST_BIN" ] || [ ! -x "$SPEEDTEST_BIN" ]; then
-			echo '{"status":"error","message":"Speedtest binary not found. Please run: apk add speedtest-go"}'
-			exit 0
+		if [ "$TESTER" = "speedtest" ]; then
+			SPEEDTEST_BIN=$(find_speedtest)
+			if [ -z "$SPEEDTEST_BIN" ] || [ ! -x "$SPEEDTEST_BIN" ]; then
+				echo '{"status":"error","message":"Speedtest binary not found. Please run: apk add speedtest-go"}'
+				exit 0
+			fi
 		fi
 
 		rm -f "$EXEC_LOG"
@@ -108,9 +118,9 @@ EOF
 
 		chmod 0755 /usr/libexec/speedtest-runner.sh 2>/dev/null || true
 		if command -v start-stop-daemon >/dev/null 2>&1; then
-			start-stop-daemon -S -b -x /usr/libexec/speedtest-runner.sh -- "$SERVER_ID"
+			start-stop-daemon -S -b -x /usr/libexec/speedtest-runner.sh -- "$SERVER_ID" "$TESTER"
 		else
-			( /bin/sh /usr/libexec/speedtest-runner.sh "$SERVER_ID" </dev/null >/dev/null 2>&1 ) &
+			( /bin/sh /usr/libexec/speedtest-runner.sh "$SERVER_ID" "$TESTER" </dev/null >/dev/null 2>&1 ) &
 		fi
 
 		echo '{"status":"ok","message":"Speed test started"}'
@@ -125,6 +135,7 @@ EOF
 		fi
 		killall -9 speedtest-go 2>/dev/null || true
 		killall -9 speedtest 2>/dev/null || true
+		killall -9 curl 2>/dev/null || true
 		[ -f "$EXEC_LOG" ] && echo -e "\n[!] Speed test stopped by user." >> "$EXEC_LOG"
 		echo '{"status":"ok","message":"Speed test cancelled"}'
 		exit 0

@@ -199,7 +199,7 @@ return view.extend({
         } else if (data.ping !== null || logText.indexOf('Server:') !== -1) {
             data.phase = 'ping';
             data.current_speed = 0.0;
-        } else if (logText.indexOf('Speedtest Terminal Session') !== -1) {
+        } else if ((logText.indexOf('Speedtest Terminal Session') !== -1 || logText.indexOf('Fast.com Terminal Session') !== -1)) {
             data.phase = 'connecting';
             data.current_speed = 0.0;
         }
@@ -346,6 +346,7 @@ return view.extend({
             serverList = [];
         }
 
+        var savedTester = uci.get('speedtest', 'main', 'tester') || (statusData.tester || 'speedtest');
         var savedServer = uci.get('speedtest', 'main', 'server_id') || 'auto';
         var engine = statusData.engine || {};
         var client = statusData.client || {};
@@ -384,6 +385,15 @@ return view.extend({
         ]);
 
         // Controls Toolbar
+        var testerSelect = E('select', {
+            'id': 'st-tester-select',
+            'class': 'cbi-input-select',
+            'style': 'min-width:180px;background:#0f172a;color:#38bdf8;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;font-weight:600;'
+        }, [
+            E('option', { 'value': 'speedtest', 'selected': (savedTester === 'speedtest') ? '' : null }, _('Speedtest.net (Ookla)')),
+            E('option', { 'value': 'fast', 'selected': (savedTester === 'fast') ? '' : null }, _('Fast.com (Netflix)'))
+        ]);
+
         var serverSelect = E('select', {
             'id': 'st-server-select',
             'class': 'cbi-input-select',
@@ -391,6 +401,42 @@ return view.extend({
         }, [
             E('option', { 'value': 'auto', 'selected': (savedServer === 'auto') ? '' : null }, _('Automatic (Optimal / Nearest)'))
         ]);
+
+        var updateTesterUI = function(tVal) {
+            var badgeEl = document.getElementById('st-engine-badge');
+            if (tVal === 'fast') {
+                serverSelect.disabled = true;
+                serverSelect.style.opacity = '0.45';
+                serverSelect.style.cursor = 'not-allowed';
+                if (badgeEl) {
+                    badgeEl.textContent = 'Fast.com (Netflix CDN)';
+                    badgeEl.style.color = '#ec4899';
+                    badgeEl.style.borderColor = 'rgba(236,72,153,0.35)';
+                }
+            } else {
+                serverSelect.disabled = false;
+                serverSelect.style.opacity = '1.0';
+                serverSelect.style.cursor = 'default';
+                if (badgeEl) {
+                    badgeEl.textContent = engine.version ? engine.version.split(' ')[0] + ' ' + (engine.version.split(' ')[1] || '') : _('Ookla Engine Ready');
+                    badgeEl.style.color = '#38bdf8';
+                    badgeEl.style.borderColor = 'rgba(56,189,248,0.25)';
+                }
+            }
+        };
+
+        testerSelect.addEventListener('change', function(ev) {
+            var val = ev.target.value;
+            uci.set('speedtest', 'main', 'tester', val);
+            uci.save();
+            updateTesterUI(val);
+        });
+
+        serverSelect.addEventListener('change', function(ev) {
+            var val = ev.target.value;
+            uci.set('speedtest', 'main', 'server_id', val);
+            uci.save();
+        });
 
         if (Array.isArray(serverList)) {
             serverList.forEach(function(s) {
@@ -434,7 +480,11 @@ return view.extend({
             'style': 'display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#131b2e;padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);margin-bottom:20px;'
         }, [
             E('div', { 'style': 'display:flex;align-items:center;gap:8px;' }, [
-                E('label', { 'style': 'font-size:13px;color:#94a3b8;font-weight:600;margin:0;' }, _('Target Server:')),
+                E('label', { 'style': 'font-size:13px;color:#94a3b8;font-weight:600;margin:0;' }, _('Tester:')),
+                testerSelect
+            ]),
+            E('div', { 'style': 'display:flex;align-items:center;gap:8px;' }, [
+                E('label', { 'style': 'font-size:13px;color:#94a3b8;font-weight:600;margin:0;' }, _('Server:')),
                 serverSelect
             ]),
             E('div', { 'style': 'margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap;' }, [
@@ -658,20 +708,24 @@ return view.extend({
         var self = this;
 
         btnStart.addEventListener('click', function() {
-            var selectedSrv = serverSelect.value;
+            var selectedSrv = serverSelect.value || 'auto';
+            var selectedTester = testerSelect.value || 'speedtest';
             btnStart.style.display = 'none';
             btnStop.style.display = 'inline-flex';
             self.isRunning = true;
             self.resetUI();
             self.updateSpeedometer(0, 'Mbps', 'STARTING', '#f59e0b');
 
-            terminalPre.textContent = 'root@ImmortalWrt:~# speedtest' + (selectedSrv && selectedSrv !== 'auto' ? ' -s ' + selectedSrv : '') + '\n';
+            var cmdDesc = (selectedTester === 'fast')
+                ? 'fast.com (Netflix CDN)'
+                : ('speedtest' + (selectedSrv && selectedSrv !== 'auto' ? ' -s ' + selectedSrv : ''));
+            terminalPre.textContent = 'root@ImmortalWrt:~# ' + cmdDesc + '\n';
             terminalPre.scrollTop = terminalPre.scrollHeight;
 
-            fs.exec(ACTION_SCRIPT, ['start', selectedSrv]).then(function() {
+            fs.exec(ACTION_SCRIPT, ['start', selectedSrv, selectedTester]).then(function() {
                 self.startLogPolling(terminalPre, btnStart, btnStop);
             }).catch(function(err) {
-                terminalPre.textContent += '\n[Error] Failed to start speedtest: ' + (err.message || err) + '\n';
+                terminalPre.textContent += '\n[Error] Failed to start test: ' + (err.message || err) + '\n';
                 btnStart.style.display = 'inline-flex';
                 btnStop.style.display = 'none';
                 self.isRunning = false;
@@ -720,6 +774,7 @@ return view.extend({
             self.startLogPolling(terminalPre, btnStart, btnStop);
         }
 
+        window.setTimeout(function() { updateTesterUI(savedTester); }, 20);
         return viewContainer;
     },
 
