@@ -5,8 +5,8 @@ LUCI_DEPENDS:=+luci-base +curl +ca-bundle +jq +tar
 LUCI_PKGARCH:=all
 
 PKG_NAME:=luci-app-speedtest-onyx
-PKG_VERSION:=1.0
-PKG_RELEASE:=15
+PKG_VERSION:=1.1
+PKG_RELEASE:=1
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=Manish Matwa Choudhary
 

@@ -4,7 +4,7 @@
 
 ### Authentic Speedtest.net (Ookla) Onyx Dashboard for OpenWrt
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com)
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-24.10%2B%20(apk)-success.svg)](https://openwrt.org)
 [![ImmortalWrt](https://img.shields.io/badge/ImmortalWrt-Compatible-success.svg)](https://immortalwrt.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -85,7 +85,7 @@ luci-app-speedtest/
 Run the following command over SSH on your router:
 
 ```sh
-cd /tmp && uclient-fetch -O luci-app-speedtest-onyx-1.0.2-r2.apk https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/download/v1.0.2/luci-app-speedtest-onyx-1.0.2-r2.apk && apk add --allow-untrusted ./luci-app-speedtest-onyx-*.apk
+cd /tmp && uclient-fetch -O luci-app-speedtest-onyx-1.1-r1.apk https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/download/v1.1-r1/luci-app-speedtest-onyx-1.1-r1.apk && apk add --allow-untrusted ./luci-app-speedtest-onyx-*.apk
 ```
 
 ### Option 2: Manual Installation via SCP
