@@ -979,7 +979,7 @@ return view.extend({
             E('div', { 'style': 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;' }, [
                 E('span', {
                     'style': 'background:rgba(16,185,129,0.12);color:#059669;border:1px solid rgba(16,185,129,0.3);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700;'
-                }, 'v1.3.1')
+                }, 'v1.3-r1')
             ])
         ]);
 
