@@ -1,3 +1,16 @@
+# Release v1.3
+
+## Speedtest Onyx Console for OpenWrt / ImmortalWrt
+- **Theme-Adaptive Design System**: Full native theme integration across **all** OpenWrt themes (LuCI default Bootstrap, Argon light/dark, Material, Design, Rosy, Proton2025, etc.). Automatically detects background luminance and applies tailored CSS custom properties to blend cleanly without harsh contrast or unstyled dark boxes on light themes.
+- **Theme Mode Switcher**: Dedicated display switcher with 3 modes:
+  - `⚙️ Auto (Theme Adaptive)` *(Default)*: Follows active OpenWrt theme dynamically.
+  - `🌙 Onyx Dark`: Deep cyber glassmorphism for fans of dark speedometer styling.
+  - `☀️ Clean Light`: Crisp white cards with high-contrast slate typography.
+- **Dual Target Execution (Router vs 5G ODU)**:
+  - User can choose whether to run tests locally on the **OpenWrt Router** or remotely on the **Sercomm 5G Outdoor Unit (`192.168.225.1`)** via Telnet.
+  - 100% RAM-only execution on the ODU inside `/tmp` with zero flash wear and no persistent footprint.
+  - Live log streaming and speedometer animation work seamlessly across both execution targets.
+
 # Release v1.2-r1
 
 ## Speedtest Onyx Console for OpenWrt / ImmortalWrt
