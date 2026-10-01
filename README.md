@@ -20,13 +20,18 @@ A modern, responsive LuCI web dashboard extension designed to run official **Spe
 
 | **Console Standby (Ready State)** | **Target Server Selection** |
 | :---: | :---: |
-| [![Console Standby](screenshot/initial_screen.png)](screenshot/initial_screen.png) | [![Target Server Selection](screenshot/Target_Server_selection.png)](screenshot/Target_Server_selection.png) |
-| *Signature speedometer gauge, detected ISP/IP & ready terminal* | *Automatic nearest server selection or pick from nearby Ookla hosts* |
+| [![Console Standby](screenshot/before_speedtest_initial_state.png)](screenshot/before_speedtest_initial_state.png) | [![Target Server Selection](screenshot/Target_Server_selection.png)](screenshot/Target_Server_selection.png) |
+| *3-Tab layout, signature speedometer gauge, detected ISP & ready terminal* | *Automatic optimal server discovery or pick from nearby Ookla hosts* |
 
-| **Active Benchmark & Full Telemetry (605+ Mbps)** |
+| **Active Benchmark & Full Telemetry (570+ Mbps)** | **Persistent History & Analytics** |
+| :---: | :---: |
+| [![Completed Benchmark](screenshot/after_speedtest.png)](screenshot/after_speedtest.png) | [![History & Analytics](screenshot/History_and_analytics.png)](screenshot/History_and_analytics.png) |
+| *High-speed bandwidth test, latency, jitter, packet loss & live streaming log* | *Peak DL/UL cards, comprehensive test log, direct Ookla links & CSV export* |
+
+| **Dedicated Settings View** |
 | :---: |
-| [![Completed Benchmark](screenshot/after_speedtest.png)](screenshot/after_speedtest.png) |
-| *Gauge needle deflection, sub-second progressive bandwidth bars, Grade A+ packet loss assessment, and live terminal streaming log* |
+| [![Settings View](screenshot/settings_page.png)](screenshot/settings_page.png) |
+| *Speed display units (Mbps, MB/s, Gbps), retention limit, default server lock & Cron scheduler* |
 
 ---
 
@@ -160,7 +165,7 @@ UCI options are stored in `/etc/config/speedtest`:
 | :--- | :--- | :--- | :--- |
 | `enabled` | boolean | `1` | Enable or disable the application |
 | `server_id` | string | `""` | Target Ookla Server ID (`""` = auto best) |
-| `unit` | string | `mbps` | Display units (`mbps` or `mbyte`) |
+| `unit` | string | `mbps` | Display units (`mbps`, `mbyte`, or `gbps`) |
 | `history_max`| integer| `50` | Maximum history records to retain |
 | `auto_test_enabled` | boolean | `0` | Enable automated periodic speed test |
 | `auto_test_cron` | string | `0 4 * * *` | Cron schedule for automated tests |
@@ -174,14 +179,22 @@ You can also run diagnostics directly over SSH:
 
 ```sh
 # Check engine status and architecture
+/usr/libexec/speedtest-action.sh check
 
 # Install or update Speedtest CLI engine
+/usr/libexec/speedtest-action.sh install
 
 # Trigger a speed test in background
 /usr/libexec/speedtest-action.sh start
 
 # Query live test status
 /usr/libexec/speedtest-action.sh status
+
+# Retrieve historical test records
+/usr/libexec/speedtest-action.sh history
+
+# Clear test history
+/usr/libexec/speedtest-action.sh clear_history
 
 # Cancel active speed test
 /usr/libexec/speedtest-action.sh stop
