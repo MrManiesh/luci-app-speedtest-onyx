@@ -378,6 +378,216 @@ return view.extend({
     },
 
     // =========================================================================
+    showUpdateModal: function(title, contentNodes) {
+        var isDark = this.detectThemeIsDark();
+        var wrapper = E('div', {
+            'id': 'st-modal-wrapper',
+            'class': 'st-container ' + (isDark ? 'st-theme-dark' : 'st-theme-light'),
+            'style': 'color:var(--st-text-main);box-sizing:border-box;font-family:inherit;padding:4px;'
+        }, contentNodes);
+        return ui.showModal(title, [wrapper]);
+    },
+
+    checkForUpdate: function(triggerBtn) {
+        var self = this;
+        var originalHtml = triggerBtn ? triggerBtn.innerHTML : '';
+        if (triggerBtn) {
+            triggerBtn.disabled = true;
+            triggerBtn.innerHTML = '<span>⏳</span> <span>' + _('Checking...') + '</span>';
+        }
+
+        var currentVer = '1.5-r1';
+        var repoUrl = 'https://github.com/MrManiesh/luci-app-speedtest-onyx';
+
+        var doCheck = fs.exec(ACTION_SCRIPT, ['check_update']).then(function(res) {
+            var raw = res && res.stdout ? res.stdout.trim() : '';
+            if (raw && raw.indexOf('{') !== -1) {
+                return JSON.parse(raw);
+            }
+            throw new Error('Backend check returned empty');
+        }).catch(function() {
+            return fetch('https://api.github.com/repos/MrManiesh/luci-app-speedtest-onyx/releases/latest', {
+                headers: { 'Accept': 'application/vnd.github.v3+json' }
+            }).then(function(r) { return r.json(); });
+        });
+
+        doCheck.then(function(release) {
+            if (triggerBtn) {
+                triggerBtn.disabled = false;
+                triggerBtn.innerHTML = originalHtml;
+            }
+
+            if (!release || release.error || !release.tag_name) {
+                var errMsg = (release && release.message) ? release.message : (release && release.error ? release.error : _('Unable to reach GitHub. Please check router internet connectivity.'));
+                self.showUpdateModal(_('Update Check Failed'), [
+                    E('div', { 'style': 'padding:14px 6px;text-align:center;' }, [
+                        E('div', { 'style': 'font-size:36px;margin-bottom:10px;' }, '⚠️'),
+                        E('h4', { 'style': 'color:var(--st-text-main);margin:0 0 8px 0;font-weight:700;' }, _('Check Failed')),
+                        E('p', { 'style': 'color:var(--st-text-muted);font-size:13px;margin:0 0 16px 0;' }, errMsg),
+                        E('div', { 'style': 'display:flex;justify-content:center;gap:10px;' }, [
+                            E('a', {
+                                'href': repoUrl + '/releases',
+                                'target': '_blank',
+                                'class': 'btn cbi-button cbi-button-action',
+                                'style': 'padding:7px 16px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;'
+                            }, [
+                                E('span', {}, '🌐'),
+                                E('span', {}, _('GitHub Releases'))
+                            ]),
+                            E('button', {
+                                'class': 'btn cbi-button st-btn-sec',
+                                'click': ui.hideModal,
+                                'style': 'padding:7px 16px;'
+                            }, _('Close'))
+                        ])
+                    ])
+                ]);
+                return;
+            }
+
+            var latestTag = String(release.tag_name || '').trim();
+            var latestClean = latestTag.replace(/^v/, '');
+            var currentClean = currentVer.replace(/^v/, '');
+
+            var isNewer = (latestClean !== currentClean);
+
+            if (!isNewer) {
+                self.showUpdateModal(_('Software Update'), [
+                    E('div', { 'style': 'padding:14px 6px;text-align:center;' }, [
+                        E('div', { 'style': 'width:56px;height:56px;border-radius:50%;background:rgba(16,185,129,0.12);color:#059669;display:inline-flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:14px;border:1px solid rgba(16,185,129,0.3);' }, '✓'),
+                        E('h3', { 'style': 'color:var(--st-text-main);margin:0 0 6px 0;font-size:18px;font-weight:700;' }, _('You are up to date!')),
+                        E('div', { 'style': 'display:inline-flex;align-items:center;gap:8px;background:rgba(16,185,129,0.08);padding:6px 14px;border-radius:20px;margin-bottom:14px;border:1px solid rgba(16,185,129,0.2);' }, [
+                            E('span', { 'style': 'font-size:12px;color:var(--st-text-muted);' }, _('Installed Version:')),
+                            E('strong', { 'style': 'color:#059669;font-size:13px;' }, 'v' + currentClean)
+                        ]),
+                        E('p', { 'style': 'color:var(--st-text-muted);font-size:13px;line-height:1.5;margin:0 0 20px 0;' },
+                            _('You are running the latest official release of Speedtest Onyx Console.')
+                        ),
+                        E('div', { 'style': 'display:flex;justify-content:center;gap:10px;' }, [
+                            E('a', {
+                                'href': repoUrl + '/releases',
+                                'target': '_blank',
+                                'class': 'btn cbi-button st-btn-sec',
+                                'style': 'padding:7px 16px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;'
+                            }, [
+                                E('span', {}, '📜'),
+                                E('span', {}, _('Release Notes'))
+                            ]),
+                            E('button', {
+                                'class': 'btn cbi-button cbi-button-action',
+                                'click': ui.hideModal,
+                                'style': 'padding:7px 20px;font-weight:600;'
+                            }, _('Close'))
+                        ])
+                    ])
+                ]);
+            } else {
+                var apkAsset = null;
+                if (Array.isArray(release.assets)) {
+                    apkAsset = release.assets.find(function(a) { return a.name && a.name.endsWith('.apk'); });
+                }
+
+                var downloadUrl = apkAsset ? apkAsset.browser_download_url : (repoUrl + '/releases/download/' + latestTag + '/luci-app-speedtest-onyx-' + latestClean + '.apk');
+                var apkFileName = apkAsset ? apkAsset.name : ('luci-app-speedtest-onyx-' + latestClean + '.apk');
+
+                var updateCmd = 'cd /tmp && uclient-fetch -O ' + apkFileName + ' ' + downloadUrl + ' && apk add --allow-untrusted ./' + apkFileName;
+
+                var btnCopyCmd = E('button', {
+                    'class': 'btn cbi-button st-btn-sec',
+                    'style': 'padding:7px 14px;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;'
+                }, [
+                    E('span', {}, '📋'),
+                    E('span', {}, _('Copy Command'))
+                ]);
+
+                btnCopyCmd.addEventListener('click', function() {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(updateCmd).then(function() {
+                            btnCopyCmd.innerHTML = '<span>✓</span> <span>' + _('Copied!') + '</span>';
+                            setTimeout(function() {
+                                btnCopyCmd.innerHTML = '<span>📋</span> <span>' + _('Copy Command') + '</span>';
+                            }, 2500);
+                        });
+                    } else {
+                        var ta = document.createElement('textarea');
+                        ta.value = updateCmd;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                        btnCopyCmd.innerHTML = '<span>✓</span> <span>' + _('Copied!') + '</span>';
+                        setTimeout(function() {
+                            btnCopyCmd.innerHTML = '<span>📋</span> <span>' + _('Copy Command') + '</span>';
+                        }, 2500);
+                    }
+                });
+
+                var bodyText = (release.body || '').trim();
+                if (bodyText.length > 300) {
+                    bodyText = bodyText.substring(0, 300) + '...';
+                }
+
+                self.showUpdateModal(_('Update Available! 🚀'), [
+                    E('div', { 'style': 'padding:8px 4px;' }, [
+                        E('div', { 'style': 'display:flex;align-items:center;gap:12px;margin-bottom:14px;' }, [
+                            E('div', { 'style': 'width:46px;height:46px;border-radius:12px;background:rgba(2,132,199,0.12);color:#0284c7;display:flex;align-items:center;justify-content:center;font-size:24px;border:1px solid rgba(2,132,199,0.3);flex-shrink:0;' }, '🚀'),
+                            E('div', {}, [
+                                E('h3', { 'style': 'color:var(--st-text-main);margin:0 0 4px 0;font-size:16px;font-weight:700;' }, (release.name || latestTag) + ' ' + _('is available!')),
+                                E('div', { 'style': 'font-size:12px;color:var(--st-text-muted);display:flex;gap:8px;flex-wrap:wrap;' }, [
+                                    E('span', {}, _('Installed: ') + 'v' + currentClean),
+                                    E('span', { 'style': 'color:#0284c7;font-weight:700;' }, '➔ ' + _('New: ') + latestTag)
+                                ])
+                            ])
+                        ]),
+
+                        bodyText ? E('div', {
+                            'class': 'st-card',
+                            'style': 'padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--st-text-muted);white-space:pre-wrap;max-height:120px;overflow-y:auto;background:var(--st-table-header-bg);'
+                        }, bodyText) : E('span'),
+
+                        E('div', { 'style': 'margin-bottom:8px;font-size:12px;font-weight:700;color:var(--st-text-main);' },
+                            _('Run this command on your router terminal / SSH to update:')
+                        ),
+
+                        E('div', {
+                            'style': 'background:var(--st-terminal-bg);border:1px solid var(--st-terminal-border);border-radius:8px;padding:10px 14px;margin-bottom:16px;'
+                        }, [
+                            E('code', {
+                                'style': 'font-family:monospace;font-size:11px;color:var(--st-terminal-text);word-break:break-all;line-height:1.4;display:block;'
+                            }, updateCmd)
+                        ]),
+
+                        E('div', { 'style': 'display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;' }, [
+                            btnCopyCmd,
+                            E('div', { 'style': 'display:flex;gap:8px;' }, [
+                                E('a', {
+                                    'href': release.html_url || (repoUrl + '/releases/tag/' + latestTag),
+                                    'target': '_blank',
+                                    'class': 'btn cbi-button cbi-button-action',
+                                    'style': 'padding:7px 14px;font-size:12px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;'
+                                }, [
+                                    E('span', {}, '📥'),
+                                    E('span', {}, _('Download / View on GitHub'))
+                                ]),
+                                E('button', {
+                                    'class': 'btn cbi-button st-btn-sec',
+                                    'click': ui.hideModal,
+                                    'style': 'padding:7px 14px;font-size:12px;'
+                                }, _('Close'))
+                            ])
+                        ])
+                    ])
+                ]);
+            }
+        }).catch(function(err) {
+            if (triggerBtn) {
+                triggerBtn.disabled = false;
+                triggerBtn.innerHTML = originalHtml;
+            }
+            ui.addNotification(null, E('p', {}, _('Update check failed: ') + (err.message || err)), 4000);
+        });
+    },
+
     // HISTORY & ANALYTICS VIEW
     // =========================================================================
     renderHistoryView: function(historyContainer) {
@@ -809,6 +1019,41 @@ return view.extend({
         settingsWrapper.appendChild(cardHist);
         settingsWrapper.appendChild(cardDefServer);
         settingsWrapper.appendChild(cardCron);
+
+        var btnSettingsCheckUpdate = E('button', {
+            'class': 'btn cbi-button st-btn-sec',
+            'style': 'padding:8px 16px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;cursor:pointer;'
+        }, [
+            E('span', {}, '🔄'),
+            E('span', {}, _('Check for Updates'))
+        ]);
+        btnSettingsCheckUpdate.addEventListener('click', function() {
+            self.checkForUpdate(btnSettingsCheckUpdate);
+        });
+
+        var cardAbout = E('div', { 'class': 'st-card', 'style': 'padding:20px 22px;' }, [
+            E('div', { 'style': 'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;' }, [
+                E('div', {}, [
+                    E('div', { 'style': 'display:flex;align-items:center;gap:10px;margin-bottom:6px;' }, [
+                        E('span', { 'style': 'font-size:18px;' }, 'ℹ️'),
+                        E('h4', { 'style': 'color:var(--st-text-main);margin:0;font-size:15px;font-weight:700;' }, _('Software Updates & System Info'))
+                    ]),
+                    E('div', { 'style': 'color:var(--st-text-muted);font-size:13px;' }, [
+                        _('Installed Version: '),
+                        E('strong', { 'style': 'color:var(--st-text-main);' }, 'v1.5-r1'),
+                        E('span', { 'style': 'margin:0 6px;' }, '•'),
+                        E('a', {
+                            'href': 'https://github.com/MrManiesh/luci-app-speedtest-onyx',
+                            'target': '_blank',
+                            'style': 'color:#0284c7;text-decoration:none;'
+                        }, 'GitHub Repository')
+                    ])
+                ]),
+                btnSettingsCheckUpdate
+            ])
+        ]);
+        settingsWrapper.appendChild(cardAbout);
+
         settingsWrapper.appendChild(E('div', { 'style': 'text-align:right;margin-top:10px;' }, [ btnSave ]));
 
         settingsContainer.appendChild(settingsWrapper);
@@ -961,6 +1206,18 @@ return view.extend({
         }
 
         // Header
+        var btnHeaderCheckUpdate = E('button', {
+            'id': 'st-btn-check-update',
+            'class': 'btn cbi-button st-btn-sec',
+            'style': 'padding:4px 12px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px;cursor:pointer;border-radius:20px;'
+        }, [
+            E('span', {}, '🔄'),
+            E('span', {}, _('Check Update'))
+        ]);
+        btnHeaderCheckUpdate.addEventListener('click', function() {
+            self.checkForUpdate(btnHeaderCheckUpdate);
+        });
+
         var header = E('div', {
             'style': 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:15px;margin-bottom:16px;border-bottom:1px solid var(--st-header-border);padding-bottom:15px;'
         }, [
@@ -979,7 +1236,8 @@ return view.extend({
             E('div', { 'style': 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;' }, [
                 E('span', {
                     'style': 'background:rgba(16,185,129,0.12);color:#059669;border:1px solid rgba(16,185,129,0.3);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700;'
-                }, 'v1.3-r1')
+                }, 'v1.5-r1'),
+                btnHeaderCheckUpdate
             ])
         ]);
 

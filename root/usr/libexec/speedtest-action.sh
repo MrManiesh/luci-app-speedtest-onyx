@@ -163,6 +163,16 @@ EOF
 		exit 0
 		;;
 
+	check_update)
+		CURL_OUT=$(curl -s --connect-timeout 6 --max-time 10 -H "User-Agent: OpenWrt-LuCI-Speedtest" "https://api.github.com/repos/MrManiesh/luci-app-speedtest-onyx/releases/latest" 2>/dev/null)
+		if [ -n "$CURL_OUT" ]; then
+			echo "$CURL_OUT"
+		else
+			echo '{"error":"Failed to connect to GitHub"}'
+		fi
+		exit 0
+		;;
+
 	*)
 		echo '{"error":"Invalid action"}'
 		exit 1

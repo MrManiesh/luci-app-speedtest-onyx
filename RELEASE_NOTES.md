@@ -1,3 +1,16 @@
+# Release v1.5-r1
+
+## Speedtest Onyx Console for OpenWrt / ImmortalWrt
+- **Integrated 1-Click Update Checker**:
+  - Added interactive "Check for Updates" button directly in the dashboard header and Settings tab.
+  - Automatically queries the GitHub Releases API via backend curl and notifies the user if a newer version is available.
+  - Generates a ready-to-run 1-line terminal upgrade command with a 1-click "Copy Command" button and direct GitHub download links.
+- **Relocated to Onyx Tools Navigation Menu**:
+  - Moved navigation path from `Network -> Speed Test` to `Onyx Tools -> Speed Test` (`admin/onyx/speedtest`).
+  - Seamlessly integrates side-by-side with other Onyx tools like 5G ODU Telemetry.
+- **Theme-Adaptive Design System**:
+  - Full automatic background luminance and contrast adaptation across all OpenWrt themes (Proton2025, Argon light/dark, Bootstrap, Material, Aurora).
+
 # Release v1.3-r1
 
 ## Speedtest Onyx Console for OpenWrt / ImmortalWrt
