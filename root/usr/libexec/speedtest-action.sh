@@ -48,7 +48,7 @@ case "$1" in
 				H_ISP=$(jq -r '.[0].isp // empty' "$HISTORY_FILE" 2>/dev/null)
 				H_IP=$(jq -r '.[0].client_ip // empty' "$HISTORY_FILE" 2>/dev/null)
 				if [ -n "$H_ISP" ] || [ -n "$H_IP" ]; then
-					echo "{"isp":"${H_ISP:-Internet Connection}","ip":"$H_IP"}" > "$CLIENT_CACHE"
+					echo "{\"isp\":\"${H_ISP:-Internet Connection}\",\"ip\":\"$H_IP\"}" > "$CLIENT_CACHE"
 				fi
 			fi
 			if [ ! -f "$CLIENT_CACHE" ]; then
@@ -57,7 +57,7 @@ case "$1" in
 					if [ -n "$INFO" ]; then
 						Q_IP=$(echo "$INFO" | jq -r '.ip // empty' 2>/dev/null)
 						Q_ORG=$(echo "$INFO" | jq -r '.org // empty' 2>/dev/null | sed -E 's/^AS[0-9]+ //')
-						[ -n "$Q_IP" ] && echo "{"isp":"${Q_ORG:-Broadband}","ip":"$Q_IP"}" > "$CLIENT_CACHE"
+						[ -n "$Q_IP" ] && echo "{\"isp\":\"${Q_ORG:-Broadband}\",\"ip\":\"$Q_IP\"}" > "$CLIENT_CACHE"
 					fi
 				) </dev/null >/dev/null 2>&1 &
 			fi
@@ -89,6 +89,7 @@ EOF
 
 	start)
 		SERVER_ID="$2"
+
 		if [ -f "$LOCK_FILE" ]; then
 			pid=$(cat "$LOCK_FILE" 2>/dev/null)
 			if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
@@ -99,7 +100,7 @@ EOF
 
 		SPEEDTEST_BIN=$(find_speedtest)
 		if [ -z "$SPEEDTEST_BIN" ] || [ ! -x "$SPEEDTEST_BIN" ]; then
-			echo '{"status":"error","message":"Speedtest binary not found. Please run: apk add speedtest-go"}'
+			echo '{"status":"error","message":"Speedtest binary not found. Please install using: apk add speedtest-go"}'
 			exit 0
 		fi
 
@@ -143,6 +144,22 @@ EOF
 		rm -f "$EXEC_LOG"
 		touch "$EXEC_LOG"
 		echo '{"status":"ok"}'
+		exit 0
+		;;
+
+	history)
+		if [ -f "$HISTORY_FILE" ] && [ -s "$HISTORY_FILE" ]; then
+			cat "$HISTORY_FILE"
+		else
+			echo "[]"
+		fi
+		exit 0
+		;;
+
+	clear_history)
+		echo "[]" > "$HISTORY_FILE"
+		chmod 0666 "$HISTORY_FILE" 2>/dev/null || true
+		echo '{"status":"ok","message":"History cleared"}'
 		exit 0
 		;;
 

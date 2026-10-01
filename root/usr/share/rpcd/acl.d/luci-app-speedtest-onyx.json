@@ -30,6 +30,9 @@
             "file": {
                 "/usr/libexec/speedtest-action.sh": [
                     "exec"
+                ],
+                "/etc/speedtest_history.json": [
+                    "write"
                 ]
             },
             "ubus": {

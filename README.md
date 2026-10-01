@@ -4,7 +4,7 @@
 
 ### Authentic Speedtest.net (Ookla) Onyx Dashboard for OpenWrt
 
-[![Version](https://img.shields.io/badge/version-1.1.0--r2-blue.svg)](https://github.com)
+[![Version](https://img.shields.io/badge/version-1.2--r1-blue.svg)](https://github.com/MrManiesh/luci-app-speedtest-onyx/releases)
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-24.10%2B%20(apk)-success.svg)](https://openwrt.org)
 [![ImmortalWrt](https://img.shields.io/badge/ImmortalWrt-Compatible-success.svg)](https://immortalwrt.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -16,7 +16,22 @@ A modern, responsive LuCI web dashboard extension designed to run official **Spe
 
 ---
 
+## 📸 Screenshots
+
+| **Console Standby (Ready State)** | **Target Server Selection** |
+| :---: | :---: |
+| [![Console Standby](screenshot/initial_screen.png)](screenshot/initial_screen.png) | [![Target Server Selection](screenshot/Target_Server_selection.png)](screenshot/Target_Server_selection.png) |
+| *Signature speedometer gauge, detected ISP/IP & ready terminal* | *Automatic nearest server selection or pick from nearby Ookla hosts* |
+
+| **Active Benchmark & Full Telemetry (605+ Mbps)** |
+| :---: |
+| [![Completed Benchmark](screenshot/after_speedtest.png)](screenshot/after_speedtest.png) |
+| *Gauge needle deflection, sub-second progressive bandwidth bars, Grade A+ packet loss assessment, and live terminal streaming log* |
+
+---
+
 ## ✨ Features
+
 
 ### 🎯 Authentic Speedtest.net Interface
 - **The Signature "GO" Button**: Centerpiece idle screen with multi-ring radar pulse animations.
@@ -48,9 +63,17 @@ A modern, responsive LuCI web dashboard extension designed to run official **Spe
 - Automatically selects the nearest, lowest-latency Ookla test server.
 - Built-in "Change Server" dialog allows picking specific nearby servers.
 
-### 📈 Historical Analytics & Scheduled Tests
-- **Test History**: Keeps a persistent record of past speed tests with timestamps, speeds, and direct Ookla share links.
-- **Scheduled Automated Testing**: Built-in cron integration (e.g. run test daily at 4:00 AM) to monitor ISP performance over time.
+### 📈 Persistent Test History & Analytics Table
+- **Automated Logging**: Records every test run (Timestamp, Server, ISP, Ping/Jitter, DL/UL, Packet Loss, and Ookla Result link) to `/etc/speedtest_history.json`.
+- **Analytics Metrics**: Glanceable summary cards for Peak Download, Peak Upload, Average Ping, and Total Tests.
+- **Export to CSV**: 1-click CSV download for offline analysis and ISP performance logging.
+- **Instant Table Purge**: Safe "Clear History" button with confirmation.
+
+### ⚙️ Dedicated Settings Tab
+- **Speed Display Unit Switcher**: Easily switch between **Mbps** (Megabits/sec), **MB/s** (Megabytes/sec - 1 MB/s = 8 Mbps), and **Gbps** (Gigabits/sec), dynamically adapting the gauge and cards.
+- **History Retention Limit**: Configurable retention (25, 50, 100, 200 runs) with automatic storage trimming.
+- **Default Server Locking**: Lock your preferred test server or keep automatic nearest server discovery.
+- **Automated Periodic Benchmark**: Schedule tests via Cron with preset intervals (Daily 4:00 AM, 6 Hours, 12 Hours, Weekly) or custom expressions.
 
 ---
 
@@ -82,13 +105,11 @@ luci-app-speedtest/
 ## 🚀 Installation (OpenWrt 24.10+ & ImmortalWrt)
 
 ### Option 1: Direct 1-Line APK Install (Stable Release)
-Run the following command over SSH on your router to install the latest stable version (**v1.1-r2**):
+Run the following command over SSH on your router to install the latest stable version (**v1.2-r1**):
 
 ```sh
-cd /tmp && uclient-fetch -O luci-app-speedtest-onyx-1.1-r2.apk https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/download/v1.1-r2/luci-app-speedtest-onyx-1.1-r2.apk && apk add --allow-untrusted ./luci-app-speedtest-onyx-*.apk
+cd /tmp && uclient-fetch -O luci-app-speedtest-onyx-1.2-r1.apk https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/download/v1.2-r1/luci-app-speedtest-onyx-1.2-r1.apk && apk add --allow-untrusted ./luci-app-speedtest-onyx-*.apk
 ```
-
-> 🧪 **Looking for experimental features?** Check out the [v1.2-r1 Beta Release](https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/tag/v1.2-r1) (includes experimental Fast.com tester support).
 
 ### Option 2: Manual Installation via SCP
 ```sh
@@ -143,6 +164,7 @@ UCI options are stored in `/etc/config/speedtest`:
 | `history_max`| integer| `50` | Maximum history records to retain |
 | `auto_test_enabled` | boolean | `0` | Enable automated periodic speed test |
 | `auto_test_cron` | string | `0 4 * * *` | Cron schedule for automated tests |
+
 
 ---
 

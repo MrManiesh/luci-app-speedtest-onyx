@@ -6,7 +6,7 @@
 'require uci';
 
 /* =============================================================================
-   luci-app-speedtest-onyx - Modern Speedometer, Telemetry Cards & Terminal
+   luci-app-speedtest-onyx - Modern Speedometer, Telemetry, History & Settings
    ============================================================================= */
 
 var ACTION_SCRIPT = '/usr/libexec/speedtest-action.sh';
@@ -16,16 +16,20 @@ return view.extend({
     terminalPoll: null,
     isRunning: false,
     lastLogContent: '',
+    activeUnit: 'mbps',
+    activeHistory: [],
+    activeTab: 'console',
 
     load: function() {
         return Promise.all([
             L.resolveDefault(fs.exec(ACTION_SCRIPT, ['status']), null),
             L.resolveDefault(fs.exec(SERVERS_SCRIPT, []), null),
-            uci.load('speedtest').catch(function() { return {}; })
+            uci.load('speedtest').catch(function() { return {}; }),
+            L.resolveDefault(fs.exec(ACTION_SCRIPT, ['history']), null)
         ]);
     },
 
-    // Map speed in Mbps to gauge fraction (0.0 to 1.0)
+    // Map raw speed in Mbps to gauge fraction (0.0 to 1.0)
     speedToFraction: function(mbps) {
         if (!mbps || mbps <= 0) return 0;
         if (mbps <= 20) {
@@ -49,24 +53,49 @@ return view.extend({
         return 1.0;
     },
 
-    // Update Speedometer Needle, Gauge Arc, and Digital Readout
-    updateSpeedometer: function(speed, unit, phaseText, phaseColor) {
+    // Convert raw Mbps to display value and label based on active unit
+    formatSpeed: function(mbps, unit) {
+        var u = unit || this.activeUnit || 'mbps';
+        if (typeof mbps !== 'number' || isNaN(mbps)) {
+            var unitLabel = (u === 'mbyte' ? 'MB/s' : (u === 'gbps' ? 'Gbps' : 'Mbps'));
+            return { val: '--', unit: unitLabel, str: '-- ' + unitLabel };
+        }
+        if (u === 'mbyte') {
+            var mbs = mbps / 8.0;
+            var strVal = (mbs >= 100 ? mbs.toFixed(1) : mbs.toFixed(2));
+            return { val: strVal, num: mbs, unit: 'MB/s', str: strVal + ' MB/s' };
+        }
+        if (u === 'gbps') {
+            var gb = mbps / 1000.0;
+            var gbStr = (gb >= 10 ? gb.toFixed(2) : gb.toFixed(3));
+            return { val: gbStr, num: gb, unit: 'Gbps', str: gbStr + ' Gbps' };
+        }
+        var mbpsStr = (mbps >= 100 ? mbps.toFixed(1) : mbps.toFixed(2));
+        return { val: mbpsStr, num: mbps, unit: 'Mbps', str: mbpsStr + ' Mbps' };
+    },
+
+    // Update Speedometer Needle, Gauge Arc, and Center Readout
+    updateSpeedometer: function(speedMbps, unitSetting, phaseText, phaseColor) {
         var valEl = document.getElementById('st-gauge-value');
         var unitEl = document.getElementById('st-gauge-unit');
         var phaseEl = document.getElementById('st-gauge-phase');
         var needleEl = document.getElementById('st-gauge-needle');
         var arcEl = document.getElementById('st-gauge-arc-active');
 
+        var fmt = this.formatSpeed((typeof speedMbps === 'number') ? speedMbps : 0, unitSetting);
+
         if (valEl) {
-            valEl.textContent = (typeof speed === 'number') ? (speed >= 100 ? speed.toFixed(1) : speed.toFixed(2)) : speed;
+            valEl.textContent = (typeof speedMbps === 'number') ? fmt.val : speedMbps;
         }
-        if (unitEl && unit) unitEl.textContent = unit;
+        if (unitEl) {
+            unitEl.textContent = fmt.unit;
+        }
         if (phaseEl && phaseText) {
             phaseEl.textContent = phaseText;
             if (phaseColor) phaseEl.style.backgroundColor = phaseColor;
         }
 
-        var fraction = this.speedToFraction(speed);
+        var fraction = this.speedToFraction(typeof speedMbps === 'number' ? speedMbps : 0);
         // Sweeps 270 degrees from -135deg (0 Mbps) to +135deg (1000 Mbps)
         var angle = -135 + (fraction * 270);
         if (needleEl) {
@@ -82,7 +111,7 @@ return view.extend({
     },
 
     // Parse live text stream from /tmp/speedtest_exec.log
-    // IMPORTANT: Handles bare carriage return (\r) updates from Ookla CLI
+    // Handles carriage return (\r) progressive updates from Ookla CLI
     parseLogStream: function(logText) {
         var data = {
             server: null,
@@ -104,20 +133,19 @@ return view.extend({
 
         if (!logText) return data;
 
-        // Split on \r\n, bare \r, or \n so every live update line is evaluated
         var lines = logText.split(/\r\n|\r|\n/);
         for (var i = 0; i < lines.length; i++) {
             var line = lines[i].trim();
             if (!line) continue;
 
-            // Server
+            // Server line
             if (line.indexOf('Server:') !== -1) {
                 var s = line.substring(line.indexOf('Server:') + 7).trim();
-                s = s.replace(/\s*\(id:\s*\d+\)/i, '').trim();
+                s = s.replace(/\s*\(id:\s*\d+\)/i, '').replace(/\s*\(id\s*=\s*\d+\)/i, '').trim();
                 if (s) data.server = s;
             }
 
-            // ISP
+            // ISP line
             if (line.indexOf('ISP:') !== -1 && line.indexOf('Idle Latency') === -1) {
                 var ispStr = line.substring(line.indexOf('ISP:') + 4).trim();
                 if (ispStr) data.isp = ispStr;
@@ -174,7 +202,7 @@ return view.extend({
                 if (url) data.result_url = url;
             }
 
-            // Completion banner
+            // Completion check
             if (line.indexOf('[✓] Speed test completed') !== -1 || line.indexOf('completed successfully') !== -1) {
                 data.completed = true;
             }
@@ -208,6 +236,8 @@ return view.extend({
     },
 
     renderTelemetry: function(parsed) {
+        var u = this.activeUnit || 'mbps';
+
         // Ping card
         var pingValEl = document.getElementById('st-kpi-ping-val');
         var pingSubEl = document.getElementById('st-kpi-ping-sub');
@@ -220,10 +250,13 @@ return view.extend({
 
         // Download card
         var dlValEl = document.getElementById('st-kpi-dl-val');
+        var dlUnitEl = document.getElementById('st-kpi-dl-unit');
         var dlSubEl = document.getElementById('st-kpi-dl-sub');
         var dlBarEl = document.getElementById('st-kpi-dl-bar');
         if (dlValEl && parsed.download !== null) {
-            dlValEl.textContent = parsed.download.toFixed(2);
+            var fmtDl = this.formatSpeed(parsed.download, u);
+            dlValEl.textContent = fmtDl.val;
+            if (dlUnitEl) dlUnitEl.textContent = fmtDl.unit;
             if (dlSubEl) {
                 if (parsed.download_data) {
                     dlSubEl.textContent = 'Data: ' + parsed.download_data + ' (Done)';
@@ -238,10 +271,13 @@ return view.extend({
 
         // Upload card
         var ulValEl = document.getElementById('st-kpi-ul-val');
+        var ulUnitEl = document.getElementById('st-kpi-ul-unit');
         var ulSubEl = document.getElementById('st-kpi-ul-sub');
         var ulBarEl = document.getElementById('st-kpi-ul-bar');
         if (ulValEl && parsed.upload !== null) {
-            ulValEl.textContent = parsed.upload.toFixed(2);
+            var fmtUl = this.formatSpeed(parsed.upload, u);
+            ulValEl.textContent = fmtUl.val;
+            if (ulUnitEl) ulUnitEl.textContent = fmtUl.unit;
             if (ulSubEl) {
                 if (parsed.upload_data) {
                     ulSubEl.textContent = 'Data: ' + parsed.upload_data + ' (Done)';
@@ -284,21 +320,22 @@ return view.extend({
         // Update Speedometer Needle & Center Readout
         if (parsed.phase === 'download') {
             var dlLabel = 'DOWNLOAD' + (parsed.download_pct !== null ? ' ' + parsed.download_pct + '%' : '');
-            this.updateSpeedometer(parsed.download || 0, 'Mbps', dlLabel, '#06b6d4');
+            this.updateSpeedometer(parsed.download || 0, u, dlLabel, '#06b6d4');
         } else if (parsed.phase === 'upload') {
             var ulLabel = 'UPLOAD' + (parsed.upload_pct !== null ? ' ' + parsed.upload_pct + '%' : '');
-            this.updateSpeedometer(parsed.upload || 0, 'Mbps', ulLabel, '#a855f7');
+            this.updateSpeedometer(parsed.upload || 0, u, ulLabel, '#a855f7');
         } else if (parsed.phase === 'ping') {
-            this.updateSpeedometer(0, 'Mbps', 'PING TEST', '#10b981');
+            this.updateSpeedometer(0, u, 'PING TEST', '#10b981');
         } else if (parsed.phase === 'connecting') {
-            this.updateSpeedometer(0, 'Mbps', 'CONNECTING', '#f59e0b');
+            this.updateSpeedometer(0, u, 'CONNECTING', '#f59e0b');
         } else if (parsed.phase === 'completed') {
-            this.updateSpeedometer(parsed.download || 0, 'Mbps', 'COMPLETED', '#10b981');
+            this.updateSpeedometer(parsed.download || 0, u, 'COMPLETED', '#10b981');
         }
     },
 
     resetUI: function() {
-        this.updateSpeedometer(0, 'Mbps', 'READY', '#64748b');
+        var u = this.activeUnit || 'mbps';
+        this.updateSpeedometer(0, u, 'READY', '#64748b');
 
         var pingValEl = document.getElementById('st-kpi-ping-val');
         var pingSubEl = document.getElementById('st-kpi-ping-sub');
@@ -306,16 +343,20 @@ return view.extend({
         if (pingSubEl) pingSubEl.textContent = 'Jitter: --';
 
         var dlValEl = document.getElementById('st-kpi-dl-val');
+        var dlUnitEl = document.getElementById('st-kpi-dl-unit');
         var dlSubEl = document.getElementById('st-kpi-dl-sub');
         var dlBarEl = document.getElementById('st-kpi-dl-bar');
         if (dlValEl) dlValEl.textContent = '--';
+        if (dlUnitEl) dlUnitEl.textContent = this.formatSpeed(0, u).unit;
         if (dlSubEl) dlSubEl.textContent = 'Ready';
         if (dlBarEl) dlBarEl.style.width = '0%';
 
         var ulValEl = document.getElementById('st-kpi-ul-val');
+        var ulUnitEl = document.getElementById('st-kpi-ul-unit');
         var ulSubEl = document.getElementById('st-kpi-ul-sub');
         var ulBarEl = document.getElementById('st-kpi-ul-bar');
         if (ulValEl) ulValEl.textContent = '--';
+        if (ulUnitEl) ulUnitEl.textContent = this.formatSpeed(0, u).unit;
         if (ulSubEl) ulSubEl.textContent = 'Ready';
         if (ulBarEl) ulBarEl.style.width = '0%';
 
@@ -327,25 +368,491 @@ return view.extend({
         if (resultLinkEl) resultLinkEl.style.display = 'none';
     },
 
+    // =========================================================================
+    // HISTORY TAB: Renders Analytics Cards & Interactive Results Table
+    // =========================================================================
+    renderHistoryView: function(historyContainer) {
+        var self = this;
+        historyContainer.innerHTML = '';
+
+        var list = Array.isArray(self.activeHistory) ? self.activeHistory : [];
+        var count = list.length;
+
+        // Update badge count in tab header
+        var countBadge = document.getElementById('st-history-count-badge');
+        if (countBadge) countBadge.textContent = count;
+
+        // Compute summary metrics
+        var peakDl = 0;
+        var peakUl = 0;
+        var totalPing = 0;
+        var pingCount = 0;
+
+        list.forEach(function(item) {
+            var dl = parseFloat(item.download) || 0;
+            var ul = parseFloat(item.upload) || 0;
+            var p = parseFloat(item.ping) || 0;
+            if (dl > peakDl) peakDl = dl;
+            if (ul > peakUl) peakUl = ul;
+            if (p > 0) {
+                totalPing += p;
+                pingCount++;
+            }
+        });
+
+        var avgPing = (pingCount > 0) ? (totalPing / pingCount).toFixed(1) : '--';
+        var fmtPeakDl = self.formatSpeed(peakDl, self.activeUnit);
+        var fmtPeakUl = self.formatSpeed(peakUl, self.activeUnit);
+
+        // 4 Summary Metric Cards
+        var summaryGrid = E('div', {
+            'style': 'display:grid;grid-template-columns:repeat(auto-fit, minmax(190px, 1fr));gap:14px;margin-bottom:20px;'
+        }, [
+            E('div', { 'style': 'background:#0d1322;padding:16px 20px;border-radius:10px;border:1px solid rgba(255,255,255,0.07);border-top:3px solid #06b6d4;' }, [
+                E('div', { 'style': 'font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;' }, _('Peak Download')),
+                E('div', { 'style': 'font-size:26px;font-weight:800;color:#f8fafc;margin-top:6px;display:flex;align-items:baseline;gap:6px;' }, [
+                    E('span', {}, peakDl > 0 ? fmtPeakDl.val : '--'),
+                    E('span', { 'style': 'font-size:13px;color:#06b6d4;font-weight:600;' }, fmtPeakDl.unit)
+                ])
+            ]),
+            E('div', { 'style': 'background:#0d1322;padding:16px 20px;border-radius:10px;border:1px solid rgba(255,255,255,0.07);border-top:3px solid #a855f7;' }, [
+                E('div', { 'font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;' }, _('Peak Upload')),
+                E('div', { 'style': 'font-size:26px;font-weight:800;color:#f8fafc;margin-top:6px;display:flex;align-items:baseline;gap:6px;' }, [
+                    E('span', {}, peakUl > 0 ? fmtPeakUl.val : '--'),
+                    E('span', { 'style': 'font-size:13px;color:#a855f7;font-weight:600;' }, fmtPeakUl.unit)
+                ])
+            ]),
+            E('div', { 'style': 'background:#0d1322;padding:16px 20px;border-radius:10px;border:1px solid rgba(255,255,255,0.07);border-top:3px solid #10b981;' }, [
+                E('div', { 'style': 'font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;' }, _('Average Ping')),
+                E('div', { 'style': 'font-size:26px;font-weight:800;color:#f8fafc;margin-top:6px;display:flex;align-items:baseline;gap:6px;' }, [
+                    E('span', {}, avgPing),
+                    E('span', { 'style': 'font-size:13px;color:#10b981;font-weight:600;' }, 'ms')
+                ])
+            ]),
+            E('div', { 'style': 'background:#0d1322;padding:16px 20px;border-radius:10px;border:1px solid rgba(255,255,255,0.07);border-top:3px solid #3b82f6;' }, [
+                E('div', { 'style': 'font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;' }, _('Total Benchmarks')),
+                E('div', { 'style': 'font-size:26px;font-weight:800;color:#f8fafc;margin-top:6px;display:flex;align-items:baseline;gap:6px;' }, [
+                    E('span', {}, String(count)),
+                    E('span', { 'style': 'font-size:13px;color:#3b82f6;font-weight:600;' }, _('tests'))
+                ])
+            ])
+        ]);
+
+        // Action Toolbar (Export CSV, Clear History, Refresh)
+        var btnExportCsv = E('button', {
+            'class': 'btn cbi-button',
+            'style': 'background:#1e293b;color:#38bdf8;border:1px solid rgba(56,189,248,0.3);padding:7px 14px;border-radius:6px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;'
+        }, [
+            E('span', {}, '📥'),
+            E('span', {}, _('Export CSV'))
+        ]);
+
+        var btnClearHistory = E('button', {
+            'class': 'btn cbi-button',
+            'style': 'background:#1e293b;color:#ef4444;border:1px solid rgba(239,68,68,0.3);padding:7px 14px;border-radius:6px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;'
+        }, [
+            E('span', {}, '🗑️'),
+            E('span', {}, _('Clear History'))
+        ]);
+
+        var btnRefresh = E('button', {
+            'class': 'btn cbi-button',
+            'style': 'background:#1e293b;color:#cbd5e1;border:1px solid #334155;padding:7px 14px;border-radius:6px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;'
+        }, [
+            E('span', {}, '🔄'),
+            E('span', {}, _('Refresh'))
+        ]);
+
+        btnExportCsv.addEventListener('click', function() {
+            if (!list.length) {
+                ui.addNotification(null, E('p', {}, _('No history records available to export.')), 3000);
+                return;
+            }
+            var csv = 'Timestamp,Server,ISP,Client_IP,Ping_ms,Jitter_ms,Download_Mbps,Upload_Mbps,Packet_Loss_pct,Result_URL\n';
+            list.forEach(function(row) {
+                csv += '"' + (row.timestamp || '') + '",' +
+                       '"' + (row.server || '').replace(/"/g, '""') + '",' +
+                       '"' + (row.isp || '').replace(/"/g, '""') + '",' +
+                       '"' + (row.client_ip || '') + '",' +
+                       (row.ping || 0) + ',' +
+                       (row.jitter || 0) + ',' +
+                       (row.download || 0) + ',' +
+                       (row.upload || 0) + ',' +
+                       (row.packet_loss || 0) + ',' +
+                       '"' + (row.result_url || '') + '"\n';
+            });
+            var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'speedtest_history_' + (new Date().toISOString().slice(0,10)) + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        btnClearHistory.addEventListener('click', function() {
+            if (!list.length) return;
+            if (confirm(_('Are you sure you want to permanently clear all speed test history?'))) {
+                fs.exec(ACTION_SCRIPT, ['clear_history']).then(function() {
+                    self.activeHistory = [];
+                    self.renderHistoryView(historyContainer);
+                    ui.addNotification(null, E('p', {}, _('Test history has been cleared.')), 3000);
+                });
+            }
+        });
+
+        btnRefresh.addEventListener('click', function() {
+            fs.exec(ACTION_SCRIPT, ['history']).then(function(res) {
+                try {
+                    self.activeHistory = res && res.stdout ? JSON.parse(res.stdout.trim()) : [];
+                } catch (e) {
+                    self.activeHistory = [];
+                }
+                self.renderHistoryView(historyContainer);
+            });
+        });
+
+        var actionHeader = E('div', {
+            'style': 'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px;background:#131b2e;padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);'
+        }, [
+            E('div', { 'style': 'font-weight:700;color:#f8fafc;font-size:14px;display:flex;align-items:center;gap:8px;' }, [
+                E('span', { 'style': 'color:#38bdf8;' }, '📊'),
+                _('Historical Benchmarks Log')
+            ]),
+            E('div', { 'style': 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;' }, [
+                btnExportCsv,
+                btnClearHistory,
+                btnRefresh
+            ])
+        ]);
+
+        // Table container
+        var tableWrapper = E('div', {
+            'style': 'background:#0d1322;border-radius:10px;border:1px solid rgba(255,255,255,0.08);overflow-x:auto;box-shadow:0 8px 24px rgba(0,0,0,0.3);'
+        });
+
+        if (list.length === 0) {
+            var emptyNotice = E('div', {
+                'style': 'padding:45px 20px;text-align:center;color:#64748b;'
+            }, [
+                E('div', { 'style': 'font-size:36px;margin-bottom:10px;' }, '📈'),
+                E('h4', { 'style': 'color:#cbd5e1;margin:0 0 6px 0;font-weight:600;' }, _('No Speed Test History Yet')),
+                E('p', { 'style': 'font-size:13px;margin:0;' }, _('Run a test from the Console tab to record your first benchmark results.'))
+            ]);
+            tableWrapper.appendChild(emptyNotice);
+        } else {
+            var table = E('table', {
+                'class': 'table',
+                'style': 'width:100%;border-collapse:collapse;font-size:12px;text-align:left;color:#cbd5e1;'
+            });
+
+            var thead = E('thead', {}, [
+                E('tr', { 'style': 'border-bottom:1px solid rgba(255,255,255,0.1);background:#080c16;' }, [
+                    E('th', { 'style': 'padding:12px 14px;font-weight:700;color:#94a3b8;width:40px;' }, '#'),
+                    E('th', { 'style': 'padding:12px 14px;font-weight:700;color:#94a3b8;' }, _('Date & Time')),
+                    E('th', { 'style': 'padding:12px 14px;font-weight:700;color:#94a3b8;' }, _('Server')),
+                    E('th', { 'style': 'padding:12px 14px;font-weight:700;color:#94a3b8;' }, _('ISP / Host')),
+                    E('th', { 'style': 'padding:12px 14px;font-weight:700;color:#94a3b8;' }, _('Ping')),
+                    E('th', { 'style': 'padding:12px 14px;font-weight:700;color:#06b6d4;' }, _('Download')),
+                    E('th', { 'style': 'padding:12px 14px;font-weight:700;color:#a855f7;' }, _('Upload')),
+                    E('th', { 'style': 'padding:12px 14px;font-weight:700;color:#94a3b8;' }, _('Loss')),
+                    E('th', { 'style': 'padding:12px 14px;font-weight:700;color:#94a3b8;text-align:right;' }, _('Result'))
+                ])
+            ]);
+
+            var tbody = E('tbody');
+            list.forEach(function(item, idx) {
+                var dlNum = parseFloat(item.download) || 0;
+                var ulNum = parseFloat(item.upload) || 0;
+                var fmtDl = self.formatSpeed(dlNum, self.activeUnit);
+                var fmtUl = self.formatSpeed(ulNum, self.activeUnit);
+                var pingStr = (item.ping ? item.ping.toFixed(1) + ' ms' : '--');
+                var lossVal = parseFloat(item.packet_loss) || 0;
+
+                var resultCell = E('span', { 'style': 'color:#64748b;' }, '--');
+                if (item.result_url) {
+                    resultCell = E('a', {
+                        'href': item.result_url,
+                        'target': '_blank',
+                        'style': 'color:#38bdf8;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:3px;background:rgba(56,189,248,0.1);padding:3px 8px;border-radius:4px;border:1px solid rgba(56,189,248,0.25);'
+                    }, [
+                        E('span', {}, '↗'),
+                        E('span', {}, _('Ookla'))
+                    ]);
+                }
+
+                var rowBg = (idx % 2 === 0) ? 'background:#0d1322;' : 'background:#101728;';
+                var tr = E('tr', {
+                    'style': rowBg + 'border-bottom:1px solid rgba(255,255,255,0.04);transition:background 0.15s ease;'
+                }, [
+                    E('td', { 'style': 'padding:12px 14px;color:#64748b;font-weight:600;' }, String(idx + 1)),
+                    E('td', { 'style': 'padding:12px 14px;font-family:monospace;white-space:nowrap;' }, item.timestamp || '--'),
+                    E('td', { 'style': 'padding:12px 14px;font-weight:600;color:#f8fafc;' }, item.server || _('Auto Server')),
+                    E('td', { 'style': 'padding:12px 14px;color:#94a3b8;' }, (item.isp || _('Internet')) + (item.client_ip ? ' (' + item.client_ip + ')' : '')),
+                    E('td', { 'style': 'padding:12px 14px;color:#10b981;font-weight:600;white-space:nowrap;' }, [
+                        E('span', {}, pingStr),
+                        item.jitter ? E('span', { 'style': 'font-size:10px;color:#64748b;display:block;' }, '±' + item.jitter.toFixed(1) + 'ms') : ''
+                    ]),
+                    E('td', { 'style': 'padding:12px 14px;font-weight:700;color:#06b6d4;white-space:nowrap;' }, [
+                        E('span', { 'style': 'background:rgba(6,182,212,0.12);padding:3px 8px;border-radius:4px;border:1px solid rgba(6,182,212,0.25);' }, fmtDl.str)
+                    ]),
+                    E('td', { 'style': 'padding:12px 14px;font-weight:700;color:#a855f7;white-space:nowrap;' }, [
+                        E('span', { 'style': 'background:rgba(168,85,247,0.12);padding:3px 8px;border-radius:4px;border:1px solid rgba(168,85,247,0.25);' }, fmtUl.str)
+                    ]),
+                    E('td', { 'style': 'padding:12px 14px;' }, [
+                        E('span', {
+                            'style': (lossVal === 0) ? 'color:#10b981;font-weight:600;' : 'color:#f43f5e;font-weight:600;'
+                        }, lossVal.toFixed(1) + '%')
+                    ]),
+                    E('td', { 'style': 'padding:12px 14px;text-align:right;' }, resultCell)
+                ]);
+
+                tbody.appendChild(tr);
+            });
+
+            table.appendChild(thead);
+            table.appendChild(tbody);
+            tableWrapper.appendChild(table);
+        }
+
+        historyContainer.appendChild(summaryGrid);
+        historyContainer.appendChild(actionHeader);
+        historyContainer.appendChild(tableWrapper);
+    },
+
+    // =========================================================================
+    // SETTINGS TAB: Speed Unit, History Retention & Automated Cron Scheduler
+    // =========================================================================
+    renderSettingsView: function(settingsContainer, serverList) {
+        var self = this;
+        settingsContainer.innerHTML = '';
+
+        var currentUnit = uci.get('speedtest', 'main', 'unit') || 'mbps';
+        var currentHistMax = uci.get('speedtest', 'main', 'history_max') || '50';
+        var currentAutoEnabled = uci.get('speedtest', 'main', 'auto_test_enabled') || '0';
+        var currentAutoCron = uci.get('speedtest', 'main', 'auto_test_cron') || '0 4 * * *';
+        var currentServerId = uci.get('speedtest', 'main', 'server_id') || 'auto';
+
+        var settingsWrapper = E('div', {
+            'style': 'display:flex;flex-direction:column;gap:18px;max-width:850px;margin:0 auto;'
+        });
+
+        // Card 1: Speed Display Units
+        var unitSelect = E('select', {
+            'class': 'cbi-input-select',
+            'style': 'background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:9px 14px;font-size:13px;width:100%;max-width:320px;'
+        }, [
+            E('option', { 'value': 'mbps', 'selected': (currentUnit === 'mbps') ? '' : null }, _('Mbps (Megabits / second) - Default')),
+            E('option', { 'value': 'mbyte', 'selected': (currentUnit === 'mbyte') ? '' : null }, _('MB/s (Megabytes / second - 1 MB/s = 8 Mbps)')),
+            E('option', { 'value': 'gbps', 'selected': (currentUnit === 'gbps') ? '' : null }, _('Gbps (Gigabits / second)'))
+        ]);
+
+        var cardUnit = E('div', {
+            'style': 'background:#0d1322;padding:20px 22px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 24px rgba(0,0,0,0.3);'
+        }, [
+            E('div', { 'style': 'display:flex;align-items:center;gap:10px;margin-bottom:6px;' }, [
+                E('span', { 'style': 'font-size:18px;' }, '📏'),
+                E('h4', { 'style': 'color:#f8fafc;margin:0;font-size:15px;font-weight:700;' }, _('Speed Display Unit'))
+            ]),
+            E('div', { 'style': 'color:#94a3b8;font-size:13px;margin-bottom:14px;' }, 
+                _('Select the preferred measurement unit for the speedometer gauge, telemetry cards, and test history table.')
+            ),
+            unitSelect
+        ]);
+
+        // Card 2: History Retention Limit
+        var histMaxSelect = E('select', {
+            'class': 'cbi-input-select',
+            'style': 'background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:9px 14px;font-size:13px;width:100%;max-width:320px;'
+        }, [
+            E('option', { 'value': '25', 'selected': (currentHistMax === '25') ? '' : null }, _('25 benchmark runs')),
+            E('option', { 'value': '50', 'selected': (currentHistMax === '50') ? '' : null }, _('50 benchmark runs (Default)')),
+            E('option', { 'value': '100', 'selected': (currentHistMax === '100') ? '' : null }, _('100 benchmark runs')),
+            E('option', { 'value': '200', 'selected': (currentHistMax === '200') ? '' : null }, _('200 benchmark runs'))
+        ]);
+
+        var cardHist = E('div', {
+            'style': 'background:#0d1322;padding:20px 22px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 24px rgba(0,0,0,0.3);'
+        }, [
+            E('div', { 'style': 'display:flex;align-items:center;gap:10px;margin-bottom:6px;' }, [
+                E('span', { 'style': 'font-size:18px;' }, '💾'),
+                E('h4', { 'style': 'color:#f8fafc;margin:0;font-size:15px;font-weight:700;' }, _('History Retention Limit'))
+            ]),
+            E('div', { 'style': 'color:#94a3b8;font-size:13px;margin-bottom:14px;' }, 
+                _('Specify the maximum number of recent speed test results to retain in the persistent storage (/etc/speedtest_history.json).')
+            ),
+            histMaxSelect
+        ]);
+
+        // Card 3: Default Server Preference
+        var defServerSelect = E('select', {
+            'class': 'cbi-input-select',
+            'style': 'background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:9px 14px;font-size:13px;width:100%;max-width:420px;'
+        }, [
+            E('option', { 'value': 'auto', 'selected': (currentServerId === 'auto' || currentServerId === '') ? '' : null }, _('Automatic (Optimal / Nearest)'))
+        ]);
+
+        if (Array.isArray(serverList)) {
+            serverList.forEach(function(s) {
+                var opt = E('option', {
+                    'value': String(s.id),
+                    'selected': (String(s.id) === String(currentServerId)) ? '' : null
+                }, '[' + s.id + '] ' + (s.name || s.sponsor || 'Server') + ' (' + (s.location || '') + (s.country ? ', ' + s.country : '') + ')');
+                defServerSelect.appendChild(opt);
+            });
+        }
+
+        var cardDefServer = E('div', {
+            'style': 'background:#0d1322;padding:20px 22px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 24px rgba(0,0,0,0.3);'
+        }, [
+            E('div', { 'style': 'display:flex;align-items:center;gap:10px;margin-bottom:6px;' }, [
+                E('span', { 'style': 'font-size:18px;' }, '🌐'),
+                E('h4', { 'style': 'color:#f8fafc;margin:0;font-size:15px;font-weight:700;' }, _('Default Server Preference'))
+            ]),
+            E('div', { 'style': 'color:#94a3b8;font-size:13px;margin-bottom:14px;' }, 
+                _('Choose a preferred Ookla test server to lock as the default, or keep Automatic for closest latency matching.')
+            ),
+            defServerSelect
+        ]);
+
+        // Card 4: Automated Periodic Testing (Cron)
+        var autoEnableCheckbox = E('input', {
+            'type': 'checkbox',
+            'id': 'st-setting-auto-enable',
+            'checked': (currentAutoEnabled === '1') ? '' : null,
+            'style': 'width:18px;height:18px;cursor:pointer;'
+        });
+
+        var cronPresetSelect = E('select', {
+            'class': 'cbi-input-select',
+            'style': 'background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;'
+        }, [
+            E('option', { 'value': '0 4 * * *', 'selected': (currentAutoCron === '0 4 * * *') ? '' : null }, _('Every day at 4:00 AM (0 4 * * *)')),
+            E('option', { 'value': '0 */6 * * *', 'selected': (currentAutoCron === '0 */6 * * *') ? '' : null }, _('Every 6 hours (0 */6 * * *)')),
+            E('option', { 'value': '0 */12 * * *', 'selected': (currentAutoCron === '0 */12 * * *') ? '' : null }, _('Every 12 hours (0 */12 * * *)')),
+            E('option', { 'value': '0 0 * * 0', 'selected': (currentAutoCron === '0 0 * * 0') ? '' : null }, _('Every Sunday at midnight (0 0 * * 0)')),
+            E('option', { 'value': 'custom', 'selected': (['0 4 * * *', '0 */6 * * *', '0 */12 * * *', '0 0 * * 0'].indexOf(currentAutoCron) === -1) ? '' : null }, _('Custom Cron Expression'))
+        ]);
+
+        var cronCustomInput = E('input', {
+            'type': 'text',
+            'class': 'cbi-input-text',
+            'value': currentAutoCron,
+            'style': 'background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;width:180px;font-family:monospace;' + ((cronPresetSelect.value === 'custom') ? '' : 'display:none;')
+        });
+
+        cronPresetSelect.addEventListener('change', function(ev) {
+            if (ev.target.value === 'custom') {
+                cronCustomInput.style.display = 'inline-block';
+            } else {
+                cronCustomInput.style.display = 'none';
+                cronCustomInput.value = ev.target.value;
+            }
+        });
+
+        var cardCron = E('div', {
+            'style': 'background:#0d1322;padding:20px 22px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 24px rgba(0,0,0,0.3);'
+        }, [
+            E('div', { 'style': 'display:flex;align-items:center;gap:10px;margin-bottom:6px;' }, [
+                E('span', { 'style': 'font-size:18px;' }, '⏰'),
+                E('h4', { 'style': 'color:#f8fafc;margin:0;font-size:15px;font-weight:700;' }, _('Automated Periodic Benchmark'))
+            ]),
+            E('div', { 'style': 'color:#94a3b8;font-size:13px;margin-bottom:14px;' }, 
+                _('Automatically schedule speed tests in the background to log long-term ISP stability and track speed trends over time.')
+            ),
+            E('div', { 'style': 'display:flex;align-items:center;gap:12px;margin-bottom:12px;' }, [
+                autoEnableCheckbox,
+                E('label', { 'for': 'st-setting-auto-enable', 'style': 'color:#cbd5e1;font-weight:600;font-size:13px;cursor:pointer;' }, _('Enable Scheduled Speed Testing'))
+            ]),
+            E('div', { 'style': 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;' }, [
+                cronPresetSelect,
+                cronCustomInput
+            ])
+        ]);
+
+        // Save & Apply Button
+        var btnSave = E('button', {
+            'class': 'btn cbi-button cbi-button-action',
+            'style': 'background:linear-gradient(135deg, #10b981 0%, #059669 100%);color:#fff;font-weight:700;padding:10px 28px;font-size:14px;border-radius:6px;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 4px 14px rgba(16,185,129,0.35);transition:transform 0.15s ease;'
+        }, [
+            E('span', {}, '💾'),
+            E('span', {}, _('Save & Apply Settings'))
+        ]);
+
+        btnSave.addEventListener('click', function() {
+            var newUnit = unitSelect.value;
+            var newHistMax = histMaxSelect.value;
+            var newServerId = defServerSelect.value;
+            var newAutoEnabled = autoEnableCheckbox.checked ? '1' : '0';
+            var newCron = (cronPresetSelect.value === 'custom') ? cronCustomInput.value.trim() : cronPresetSelect.value;
+
+            btnSave.disabled = true;
+            btnSave.textContent = _('Saving...');
+
+            uci.set('speedtest', 'main', 'unit', newUnit);
+            uci.set('speedtest', 'main', 'history_max', newHistMax);
+            uci.set('speedtest', 'main', 'server_id', (newServerId === 'auto' ? '' : newServerId));
+            uci.set('speedtest', 'main', 'auto_test_enabled', newAutoEnabled);
+            uci.set('speedtest', 'main', 'auto_test_cron', newCron || '0 4 * * *');
+
+            uci.save();
+            uci.apply().then(function() {
+                self.activeUnit = newUnit;
+                btnSave.disabled = false;
+                btnSave.innerHTML = '<span>💾</span> <span>' + _('Save & Apply Settings') + '</span>';
+                ui.addNotification(null, E('p', {}, _('Speedtest Onyx settings saved and applied successfully.')), 3000);
+
+                // Update server dropdown in Console
+                var sSelect = document.getElementById('st-server-select');
+                if (sSelect) sSelect.value = newServerId;
+
+                // Reset Console UI to reflect the new unit
+                self.resetUI();
+            }).catch(function(err) {
+                btnSave.disabled = false;
+                btnSave.innerHTML = '<span>💾</span> <span>' + _('Save & Apply Settings') + '</span>';
+                ui.addNotification(null, E('p', {}, _('Failed to apply settings: ') + (err.message || err)), 5000);
+            });
+        });
+
+        settingsWrapper.appendChild(cardUnit);
+        settingsWrapper.appendChild(cardHist);
+        settingsWrapper.appendChild(cardDefServer);
+        settingsWrapper.appendChild(cardCron);
+        settingsWrapper.appendChild(E('div', { 'style': 'text-align:right;margin-top:10px;' }, [ btnSave ]));
+
+        settingsContainer.appendChild(settingsWrapper);
+    },
+
+    // =========================================================================
+    // MAIN RENDER FUNCTION
+    // =========================================================================
     render: function(data) {
+        var self = this;
+
         var statusData = {};
         try {
-            if (data[0] && data[0].stdout) {
-                statusData = JSON.parse(data[0].stdout.trim());
-            }
+            if (data[0] && data[0].stdout) statusData = JSON.parse(data[0].stdout.trim());
         } catch (e) {
             statusData = {};
         }
 
         var serverList = [];
         try {
-            if (data[1] && data[1].stdout) {
-                serverList = JSON.parse(data[1].stdout.trim());
-            }
+            if (data[1] && data[1].stdout) serverList = JSON.parse(data[1].stdout.trim());
         } catch (e) {
             serverList = [];
         }
 
+        try {
+            if (data[3] && data[3].stdout) self.activeHistory = JSON.parse(data[3].stdout.trim());
+        } catch (e) {
+            self.activeHistory = [];
+        }
+
+        self.activeUnit = uci.get('speedtest', 'main', 'unit') || 'mbps';
         var savedServer = uci.get('speedtest', 'main', 'server_id') || 'auto';
         var engine = statusData.engine || {};
         var client = statusData.client || {};
@@ -357,7 +864,7 @@ return view.extend({
 
         // Top Header
         var header = E('div', {
-            'style': 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:15px;margin-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:15px;'
+            'style': 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:15px;margin-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:15px;'
         }, [
             E('div', {}, [
                 E('h2', { 'style': 'margin:0 0 5px 0;font-size:22px;font-weight:700;display:flex;align-items:center;gap:10px;' }, [
@@ -383,14 +890,96 @@ return view.extend({
             ])
         ]);
 
-        // Controls Toolbar
+        // =====================================================================
+        // TAB NAVIGATION BAR (Console, History & Analytics, Settings)
+        // =====================================================================
+        var tabBtnConsole = E('button', {
+            'id': 'st-tab-btn-console',
+            'style': 'background:#1e293b;color:#38bdf8;border:1px solid rgba(56,189,248,0.35);padding:8px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all 0.2s ease;'
+        }, [
+            E('span', {}, '⚡'),
+            E('span', {}, _('Console'))
+        ]);
+
+        var tabBtnHistory = E('button', {
+            'id': 'st-tab-btn-history',
+            'style': 'background:transparent;color:#94a3b8;border:1px solid transparent;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all 0.2s ease;'
+        }, [
+            E('span', {}, '📈'),
+            E('span', {}, _('History & Analytics')),
+            E('span', {
+                'id': 'st-history-count-badge',
+                'style': 'background:#334155;color:#f8fafc;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;'
+            }, String(self.activeHistory.length))
+        ]);
+
+        var tabBtnSettings = E('button', {
+            'id': 'st-tab-btn-settings',
+            'style': 'background:transparent;color:#94a3b8;border:1px solid transparent;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all 0.2s ease;'
+        }, [
+            E('span', {}, '⚙️'),
+            E('span', {}, _('Settings'))
+        ]);
+
+        var tabNav = E('div', {
+            'style': 'display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:12px;'
+        }, [
+            tabBtnConsole,
+            tabBtnHistory,
+            tabBtnSettings
+        ]);
+
+        // Container Panes for each Tab
+        var paneConsole = E('div', { 'id': 'st-pane-console', 'style': 'display:block;' });
+        var paneHistory = E('div', { 'id': 'st-pane-history', 'style': 'display:none;' });
+        var paneSettings = E('div', { 'id': 'st-pane-settings', 'style': 'display:none;' });
+
+        var switchTab = function(targetTab) {
+            self.activeTab = targetTab;
+
+            tabBtnConsole.style.background = (targetTab === 'console') ? '#1e293b' : 'transparent';
+            tabBtnConsole.style.color = (targetTab === 'console') ? '#38bdf8' : '#94a3b8';
+            tabBtnConsole.style.borderColor = (targetTab === 'console') ? 'rgba(56,189,248,0.35)' : 'transparent';
+
+            tabBtnHistory.style.background = (targetTab === 'history') ? '#1e293b' : 'transparent';
+            tabBtnHistory.style.color = (targetTab === 'history') ? '#38bdf8' : '#94a3b8';
+            tabBtnHistory.style.borderColor = (targetTab === 'history') ? 'rgba(56,189,248,0.35)' : 'transparent';
+
+            tabBtnSettings.style.background = (targetTab === 'settings') ? '#1e293b' : 'transparent';
+            tabBtnSettings.style.color = (targetTab === 'settings') ? '#38bdf8' : '#94a3b8';
+            tabBtnSettings.style.borderColor = (targetTab === 'settings') ? 'rgba(56,189,248,0.35)' : 'transparent';
+
+            paneConsole.style.display = (targetTab === 'console') ? 'block' : 'none';
+            paneHistory.style.display = (targetTab === 'history') ? 'block' : 'none';
+            paneSettings.style.display = (targetTab === 'settings') ? 'block' : 'none';
+
+            if (targetTab === 'history') {
+                self.renderHistoryView(paneHistory);
+            } else if (targetTab === 'settings') {
+                self.renderSettingsView(paneSettings, serverList);
+            }
+        };
+
+        tabBtnConsole.addEventListener('click', function() { switchTab('console'); });
+        tabBtnHistory.addEventListener('click', function() { switchTab('history'); });
+        tabBtnSettings.addEventListener('click', function() { switchTab('settings'); });
+
+        // =====================================================================
+        // BUILD CONSOLE PANE (Toolbar, Gauge, KPI Cards, Terminal)
+        // =====================================================================
         var serverSelect = E('select', {
             'id': 'st-server-select',
             'class': 'cbi-input-select',
             'style': 'min-width:260px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;'
         }, [
-            E('option', { 'value': 'auto', 'selected': (savedServer === 'auto') ? '' : null }, _('Automatic (Optimal / Nearest)'))
+            E('option', { 'value': 'auto', 'selected': (savedServer === 'auto' || savedServer === '') ? '' : null }, _('Automatic (Optimal / Nearest)'))
         ]);
+
+        serverSelect.addEventListener('change', function(ev) {
+            var val = ev.target.value;
+            uci.set('speedtest', 'main', 'server_id', (val === 'auto' ? '' : val));
+            uci.save();
+        });
 
         if (Array.isArray(serverList)) {
             serverList.forEach(function(s) {
@@ -431,7 +1020,7 @@ return view.extend({
         }, _('Copy Output'));
 
         var toolbar = E('div', {
-            'style': 'display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#131b2e;padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);margin-bottom:20px;'
+            'style': 'display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:#131b2e;padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);margin-bottom:20px;'
         }, [
             E('div', { 'style': 'display:flex;align-items:center;gap:8px;' }, [
                 E('label', { 'style': 'font-size:13px;color:#94a3b8;font-weight:600;margin:0;' }, _('Target Server:')),
@@ -445,9 +1034,7 @@ return view.extend({
             ])
         ]);
 
-        // =========================================================================
-        // GRAPHICS SECTION: Speedometer Gauge & 4 Telemetry Cards
-        // =========================================================================
+        // Speedometer Gauge
         var gaugeWrapper = E('div', {
             'style': 'display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0d1322;padding:24px 20px;border-radius:12px;border:1px solid rgba(255,255,255,0.07);box-shadow:0 8px 24px rgba(0,0,0,0.4);position:relative;overflow:hidden;flex:1 1 320px;min-width:300px;'
         });
@@ -495,17 +1082,18 @@ return view.extend({
             '  <circle cx="140" cy="150" r="3" fill="#ffffff" />' +
             '</g>';
 
+        var initFmt = self.formatSpeed(0, self.activeUnit);
         var readoutBox = E('div', {
             'style': 'text-align:center;margin-top:-35px;z-index:2;'
         }, [
             E('div', {
                 'id': 'st-gauge-value',
                 'style': 'font-size:38px;font-weight:800;color:#f8fafc;letter-spacing:-1px;line-height:1;text-shadow:0 2px 10px rgba(0,0,0,0.5);'
-            }, '0.00'),
+            }, initFmt.val),
             E('div', {
                 'id': 'st-gauge-unit',
                 'style': 'font-size:14px;font-weight:700;color:#38bdf8;letter-spacing:0.5px;margin-top:4px;'
-            }, 'Mbps'),
+            }, initFmt.unit),
             E('div', {
                 'id': 'st-gauge-phase',
                 'style': 'margin-top:8px;font-size:11px;font-weight:700;color:#f1f5f9;background:#334155;padding:3px 12px;border-radius:12px;letter-spacing:0.8px;display:inline-block;text-transform:uppercase;transition:all 0.25s ease;'
@@ -515,6 +1103,7 @@ return view.extend({
         gaugeWrapper.appendChild(gaugeSvg);
         gaugeWrapper.appendChild(readoutBox);
 
+        // 4 KPI Cards Grid
         var cardsGrid = E('div', {
             'style': 'display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;flex:2 1 500px;'
         });
@@ -549,7 +1138,7 @@ return view.extend({
             E('div', {}, [
                 E('div', { 'style': 'display:flex;align-items:baseline;gap:6px;' }, [
                     E('span', { 'id': 'st-kpi-dl-val', 'style': 'font-size:28px;font-weight:800;color:#f8fafc;line-height:1.1;' }, '--'),
-                    E('span', { 'style': 'color:#06b6d4;font-size:14px;font-weight:600;' }, 'Mbps')
+                    E('span', { 'id': 'st-kpi-dl-unit', 'style': 'color:#06b6d4;font-size:14px;font-weight:600;' }, initFmt.unit)
                 ]),
                 E('div', { 'style': 'background:#1e293b;height:4px;border-radius:2px;margin:10px 0 6px 0;overflow:hidden;' }, [
                     E('div', { 'id': 'st-kpi-dl-bar', 'style': 'width:0%;height:100%;background:#06b6d4;transition:width 0.2s ease;' })
@@ -570,7 +1159,7 @@ return view.extend({
             E('div', {}, [
                 E('div', { 'style': 'display:flex;align-items:baseline;gap:6px;' }, [
                     E('span', { 'id': 'st-kpi-ul-val', 'style': 'font-size:28px;font-weight:800;color:#f8fafc;line-height:1.1;' }, '--'),
-                    E('span', { 'style': 'color:#a855f7;font-size:14px;font-weight:600;' }, 'Mbps')
+                    E('span', { 'id': 'st-kpi-ul-unit', 'style': 'color:#a855f7;font-size:14px;font-weight:600;' }, initFmt.unit)
                 ]),
                 E('div', { 'style': 'background:#1e293b;height:4px;border-radius:2px;margin:10px 0 6px 0;overflow:hidden;' }, [
                     E('div', { 'id': 'st-kpi-ul-bar', 'style': 'width:0%;height:100%;background:#a855f7;transition:width 0.2s ease;' })
@@ -579,7 +1168,7 @@ return view.extend({
             ])
         ]);
 
-        // 4. Packet Loss & Result Card
+        // 4. Packet Loss Card
         var resultBtn = E('a', {
             'id': 'st-kpi-result-btn',
             'target': '_blank',
@@ -617,9 +1206,7 @@ return view.extend({
             cardsGrid
         ]);
 
-        // =========================================================================
-        // COMPACT TERMINAL SECTION (Small height ~190px)
-        // =========================================================================
+        // Terminal Section
         var terminalHeader = E('div', {
             'style': 'background:#0b101c;padding:10px 16px;border-radius:10px 10px 0 0;border:1px solid #1e293b;border-bottom:none;display:flex;align-items:center;justify-content:space-between;'
         }, [
@@ -650,22 +1237,28 @@ return view.extend({
             terminalPre
         ]);
 
+        paneConsole.appendChild(toolbar);
+        paneConsole.appendChild(graphicsSection);
+        paneConsole.appendChild(terminalContainer);
+
+        // Assemble into main container
         viewContainer.appendChild(header);
-        viewContainer.appendChild(toolbar);
-        viewContainer.appendChild(graphicsSection);
-        viewContainer.appendChild(terminalContainer);
+        viewContainer.appendChild(tabNav);
+        viewContainer.appendChild(paneConsole);
+        viewContainer.appendChild(paneHistory);
+        viewContainer.appendChild(paneSettings);
 
-        var self = this;
-
+        // Terminal Button Handlers
         btnStart.addEventListener('click', function() {
-            var selectedSrv = serverSelect.value;
+            var selectedSrv = serverSelect.value || 'auto';
             btnStart.style.display = 'none';
             btnStop.style.display = 'inline-flex';
             self.isRunning = true;
             self.resetUI();
-            self.updateSpeedometer(0, 'Mbps', 'STARTING', '#f59e0b');
+            self.updateSpeedometer(0, self.activeUnit, 'STARTING', '#f59e0b');
 
-            terminalPre.textContent = 'root@ImmortalWrt:~# speedtest' + (selectedSrv && selectedSrv !== 'auto' ? ' -s ' + selectedSrv : '') + '\n';
+            var hostLabel = 'root@ImmortalWrt:~# ';
+            terminalPre.textContent = hostLabel + 'speedtest' + (selectedSrv && selectedSrv !== 'auto' ? ' -s ' + selectedSrv : '') + '\n';
             terminalPre.scrollTop = terminalPre.scrollHeight;
 
             fs.exec(ACTION_SCRIPT, ['start', selectedSrv]).then(function() {
@@ -686,7 +1279,7 @@ return view.extend({
                 btnStop.style.display = 'none';
                 self.isRunning = false;
                 self.stopLogPolling();
-                self.updateSpeedometer(0, 'Mbps', 'STOPPED', '#ef4444');
+                self.updateSpeedometer(0, self.activeUnit, 'STOPPED', '#ef4444');
             });
         });
 
@@ -727,7 +1320,6 @@ return view.extend({
         var self = this;
         self.stopLogPolling();
 
-        // 350ms interval for fluid, real-time speedometer needle response
         self.terminalPoll = window.setInterval(function() {
             Promise.all([
                 L.resolveDefault(fs.exec(ACTION_SCRIPT, ['log']), null),
@@ -740,12 +1332,9 @@ return view.extend({
                     var out = logRes.stdout;
                     if (out !== self.lastLogContent) {
                         self.lastLogContent = out;
-                        
-                        // Clean CR into LF for consistent cross-browser terminal rendering
                         termEl.textContent = out.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
                         termEl.scrollTop = termEl.scrollHeight;
 
-                        // Parse live telemetry and animate speedometer needle + update cards
                         var parsed = self.parseLogStream(out);
                         self.renderTelemetry(parsed);
                     }
@@ -769,6 +1358,23 @@ return view.extend({
                         var finalParsed = self.parseLogStream(logRes.stdout);
                         self.renderTelemetry(finalParsed);
                     }
+
+                    // Reload history records after test completion
+                    window.setTimeout(function() {
+                        fs.exec(ACTION_SCRIPT, ['history']).then(function(hRes) {
+                            try {
+                                if (hRes && hRes.stdout) {
+                                    self.activeHistory = JSON.parse(hRes.stdout.trim());
+                                    var countBadge = document.getElementById('st-history-count-badge');
+                                    if (countBadge) countBadge.textContent = self.activeHistory.length;
+                                    var paneHist = document.getElementById('st-pane-history');
+                                    if (paneHist && self.activeTab === 'history') {
+                                        self.renderHistoryView(paneHist);
+                                    }
+                                }
+                            } catch (e) {}
+                        });
+                    }, 1200);
                 }
             });
         }, 350);
