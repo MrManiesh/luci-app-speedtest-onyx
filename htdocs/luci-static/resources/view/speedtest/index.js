@@ -416,7 +416,7 @@ return view.extend({
                 ])
             ]),
             E('div', { 'style': 'background:#0d1322;padding:16px 20px;border-radius:10px;border:1px solid rgba(255,255,255,0.07);border-top:3px solid #a855f7;' }, [
-                E('div', { 'font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;' }, _('Peak Upload')),
+                E('div', { 'style': 'font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;' }, _('Peak Upload')),
                 E('div', { 'style': 'font-size:26px;font-weight:800;color:#f8fafc;margin-top:6px;display:flex;align-items:baseline;gap:6px;' }, [
                     E('span', {}, peakUl > 0 ? fmtPeakUl.val : '--'),
                     E('span', { 'style': 'font-size:13px;color:#a855f7;font-weight:600;' }, fmtPeakUl.unit)
