@@ -1,3 +1,17 @@
+# Release v1.3.1
+
+## Speedtest Onyx Console for OpenWrt / ImmortalWrt
+- **Fixed History & Analytics Benchmark Logging**:
+  - Resolved an issue where speed test results did not appear in the History table after test completion.
+  - Added robust metric extraction in `speedtest-runner.sh` to extract Server, ISP, Ping, Jitter, Download, Upload, Packet Loss, and Ookla Result URLs.
+  - Test results are persistently recorded into `/etc/speedtest_history.json`.
+- **Backend History Endpoints**:
+  - Restored `history` and `clear_history` actions in `speedtest-action.sh` to serve benchmark records to the LuCI web interface.
+- **Dynamic Frontend Synchronization**:
+  - When tests complete or when switching to the "History & Analytics" tab, the dashboard asynchronously refreshes and re-renders the latest benchmark records and summary cards in real-time.
+- **Pure Automatic Theme Blending**:
+  - Removed manual theme toggles; the UI automatically detects background luminance and theme styles (Proton2025, Argon dark/light, Bootstrap, Material, Aurora) for seamless contrast and blending out of the box.
+
 # Release v1.3
 
 ## Speedtest Onyx Console for OpenWrt / ImmortalWrt

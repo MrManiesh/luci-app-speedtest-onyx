@@ -32,10 +32,6 @@ case "$1" in
 			[ -z "$ENGINE_VER" ] && ENGINE_VER=$("$SPEEDTEST_BIN" -v 2>&1 | head -n 1)
 		fi
 
-		CURRENT_TARGET=$(uci -q get speedtest.main.target || echo "router")
-		[ -z "$CURRENT_TARGET" ] && CURRENT_TARGET="router"
-		ODU_HOST=$(uci -q get speedtest.main.odu_host || echo "192.168.225.1")
-
 		IS_RUNNING="0"
 		if [ -f "$LOCK_FILE" ]; then
 			pid=$(cat "$LOCK_FILE" 2>/dev/null)
@@ -79,8 +75,6 @@ case "$1" in
 		cat << EOF
 {
   "running": $IS_RUNNING,
-  "target": "$CURRENT_TARGET",
-  "odu_host": "$ODU_HOST",
   "client": $CLIENT_JSON,
   "engine": {
     "installed": $ENGINE_INSTALLED,
@@ -95,9 +89,6 @@ EOF
 
 	start)
 		SERVER_ID="$2"
-		TARGET="$3"
-		[ -z "$TARGET" ] && TARGET=$(uci -q get speedtest.main.target || echo "router")
-		[ -z "$TARGET" ] && TARGET="router"
 
 		if [ -f "$LOCK_FILE" ]; then
 			pid=$(cat "$LOCK_FILE" 2>/dev/null)
@@ -107,12 +98,10 @@ EOF
 			fi
 		fi
 
-		if [ "$TARGET" = "router" ]; then
-			SPEEDTEST_BIN=$(find_speedtest)
-			if [ -z "$SPEEDTEST_BIN" ] || [ ! -x "$SPEEDTEST_BIN" ]; then
-				echo '{"status":"error","message":"Speedtest binary not found on router. Please run: apk add speedtest-go"}'
-				exit 0
-			fi
+		SPEEDTEST_BIN=$(find_speedtest)
+		if [ -z "$SPEEDTEST_BIN" ] || [ ! -x "$SPEEDTEST_BIN" ]; then
+			echo '{"status":"error","message":"Speedtest binary not found on router. Please run: apk add speedtest-go"}'
+			exit 0
 		fi
 
 		rm -f "$EXEC_LOG"
@@ -120,9 +109,9 @@ EOF
 
 		chmod 0755 /usr/libexec/speedtest-runner.sh 2>/dev/null || true
 		if command -v start-stop-daemon >/dev/null 2>&1; then
-			start-stop-daemon -S -b -x /usr/libexec/speedtest-runner.sh -- "$SERVER_ID" "$TARGET"
+			start-stop-daemon -S -b -x /usr/libexec/speedtest-runner.sh -- "$SERVER_ID"
 		else
-			( /bin/sh /usr/libexec/speedtest-runner.sh "$SERVER_ID" "$TARGET" </dev/null >/dev/null 2>&1 ) &
+			( /bin/sh /usr/libexec/speedtest-runner.sh "$SERVER_ID" </dev/null >/dev/null 2>&1 ) &
 		fi
 
 		echo '{"status":"ok","message":"Speed test started"}'
@@ -137,7 +126,6 @@ EOF
 		fi
 		killall -9 speedtest-go 2>/dev/null || true
 		killall -9 speedtest 2>/dev/null || true
-		killall -9 telnet 2>/dev/null || true
 		[ -f "$EXEC_LOG" ] && echo -e "\n[!] Speed test stopped by user." >> "$EXEC_LOG"
 		echo '{"status":"ok","message":"Speed test cancelled"}'
 		exit 0
@@ -156,6 +144,22 @@ EOF
 		rm -f "$EXEC_LOG"
 		touch "$EXEC_LOG"
 		echo '{"status":"ok"}'
+		exit 0
+		;;
+
+	history)
+		if [ -f "$HISTORY_FILE" ] && [ -s "$HISTORY_FILE" ]; then
+			cat "$HISTORY_FILE"
+		else
+			echo "[]"
+		fi
+		exit 0
+		;;
+
+	clear_history)
+		echo "[]" > "$HISTORY_FILE"
+		chmod 0666 "$HISTORY_FILE" 2>/dev/null || true
+		echo '{"status":"ok","message":"History cleared"}'
 		exit 0
 		;;
 

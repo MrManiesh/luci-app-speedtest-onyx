@@ -4,7 +4,7 @@
 
 ### Authentic Speedtest.net (Ookla) Onyx Dashboard for OpenWrt
 
-[![Version](https://img.shields.io/badge/version-1.3-blue.svg)](https://github.com/MrManiesh/luci-app-speedtest-onyx/releases)
+[![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](https://github.com/MrManiesh/luci-app-speedtest-onyx/releases)
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-24.10%2B%20(apk)-success.svg)](https://openwrt.org)
 [![ImmortalWrt](https://img.shields.io/badge/ImmortalWrt-Compatible-success.svg)](https://immortalwrt.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -37,8 +37,7 @@ A modern, responsive LuCI web dashboard extension designed to run official **Spe
 
 ## ✨ Features
 
-- **Theme-Adaptive Design System**: Seamlessly adapts and blends with **any OpenWrt theme** (LuCI default Bootstrap, Argon light/dark, Material, Design, Rosy, Proton2025). Automatically detects theme luminance to prevent contrast clash, with an integrated 3-mode switcher (`Auto`, `Onyx Dark`, `Clean Light`).
-- **Dual Execution Target (Router vs 5G ODU)**: Execute speed tests locally on the router or remotely on a connected **Sercomm 5G Outdoor Unit (`192.168.225.1`)** via in-memory `/tmp` RAM execution over Telnet with zero flash wear.
+- **Automatic Theme-Adaptive Design System**: Seamlessly adapts and blends with **any OpenWrt theme** (LuCI default Bootstrap, Argon light/dark, Material, Aurora, Proton2025). Automatically detects theme background luminance and live theme changes to render Obsidian Dark or High-Contrast Crisp Light with zero manual configuration.
 
 
 ### 🎯 Authentic Speedtest.net Interface
