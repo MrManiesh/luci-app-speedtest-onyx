@@ -4,7 +4,7 @@
 
 ### Authentic Speedtest.net (Ookla) Onyx Dashboard for OpenWrt
 
-[![Version](https://img.shields.io/badge/version-1.6--r1-blue.svg)](https://github.com/MrManiesh/luci-app-speedtest-onyx/releases)
+[![Version](https://img.shields.io/badge/version-1.6--r2-blue.svg)](https://github.com/MrManiesh/luci-app-speedtest-onyx/releases)
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-24.10%2B%20(apk)-success.svg)](https://openwrt.org)
 [![ImmortalWrt](https://img.shields.io/badge/ImmortalWrt-Compatible-success.svg)](https://immortalwrt.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -112,10 +112,10 @@ luci-app-speedtest/
 ## 🚀 Installation (OpenWrt 24.10+ & ImmortalWrt)
 
 ### Option 1: Direct 1-Line APK Install (Stable Release)
-Run the following command over SSH on your router to install the latest stable version (**v1.6-r1**):
+Run the following command over SSH on your router to install the latest stable version (**v1.6-r2**):
 
 ```sh
-cd /tmp && uclient-fetch -O luci-app-speedtest-onyx-1.6-r1.apk https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/download/v1.6-r1/luci-app-speedtest-onyx-1.6-r1.apk && apk add --allow-untrusted ./luci-app-speedtest-onyx-*.apk
+cd /tmp && uclient-fetch -O luci-app-speedtest-onyx-1.6-r2.apk https://github.com/MrManiesh/luci-app-speedtest-onyx/releases/download/v1.6-r2/luci-app-speedtest-onyx-1.6-r2.apk && apk add --allow-untrusted ./luci-app-speedtest-onyx-*.apk
 ```
 
 ### Option 2: Manual Installation via SCP

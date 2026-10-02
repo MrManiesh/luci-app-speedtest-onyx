@@ -20,6 +20,7 @@ return view.extend({
     activeHistory: [],
     activeTab: 'console',
     activeTheme: 'auto',
+    activeResultUrl: null,
 
     load: function() {
         return Promise.all([
@@ -235,19 +236,35 @@ return view.extend({
             }
         }
 
-        // Packet Loss card
-        var lossValEl = document.getElementById('st-kpi-loss-val');
-        var lossSubEl = document.getElementById('st-kpi-loss-sub');
-        var resultLinkEl = document.getElementById('st-kpi-result-btn');
-        if (lossValEl && parsed.packet_loss !== null) {
-            lossValEl.textContent = parsed.packet_loss.toFixed(1) + '%';
-            if (lossSubEl) {
-                lossSubEl.textContent = (parsed.packet_loss === 0) ? 'Grade A+ • Optimal' : (parsed.packet_loss < 2 ? 'Grade A • Good' : 'Loss Detected');
+        // Ookla Result Link card
+        var resValEl = document.getElementById('st-kpi-result-val');
+        var resSubEl = document.getElementById('st-kpi-result-sub');
+        var btnOpen = document.getElementById('st-btn-open-result');
+        var btnCopy = document.getElementById('st-btn-copy-result');
+        if (parsed.result_url) {
+            self.activeResultUrl = parsed.result_url;
+            if (resValEl) {
+                resValEl.textContent = _('Ready');
+                resValEl.style.color = '#10b981';
             }
-        }
-        if (resultLinkEl && parsed.result_url) {
-            resultLinkEl.href = parsed.result_url;
-            resultLinkEl.style.display = 'inline-flex';
+            if (resSubEl) {
+                resSubEl.textContent = _('Official Speedtest.net link generated');
+            }
+            if (btnOpen) {
+                btnOpen.href = parsed.result_url;
+                btnOpen.style.display = 'inline-flex';
+            }
+            if (btnCopy) {
+                btnCopy.style.display = 'inline-flex';
+            }
+        } else if (parsed.phase === 'download' || parsed.phase === 'upload') {
+            if (resValEl) {
+                resValEl.textContent = _('Testing...');
+                resValEl.style.color = '#0284c7';
+            }
+            if (resSubEl) {
+                resSubEl.textContent = _('Generating Ookla result URL...');
+            }
         }
 
         // Server & ISP text
@@ -303,12 +320,18 @@ return view.extend({
         if (ulSubEl) ulSubEl.textContent = 'Ready';
         if (ulBarEl) ulBarEl.style.width = '0%';
 
-        var lossValEl = document.getElementById('st-kpi-loss-val');
-        var lossSubEl = document.getElementById('st-kpi-loss-sub');
-        var resultLinkEl = document.getElementById('st-kpi-result-btn');
-        if (lossValEl) lossValEl.textContent = '--%';
-        if (lossSubEl) lossSubEl.textContent = 'Grade: --';
-        if (resultLinkEl) resultLinkEl.style.display = 'none';
+        self.activeResultUrl = null;
+        var resValEl = document.getElementById('st-kpi-result-val');
+        var resSubEl = document.getElementById('st-kpi-result-sub');
+        var btnOpen = document.getElementById('st-btn-open-result');
+        var btnCopy = document.getElementById('st-btn-copy-result');
+        if (resValEl) {
+            resValEl.textContent = '--';
+            resValEl.style.color = 'inherit';
+        }
+        if (resSubEl) resSubEl.textContent = _('Waiting for test run');
+        if (btnOpen) btnOpen.style.display = 'none';
+        if (btnCopy) btnCopy.style.display = 'none';
     },
 
     detectThemeIsDark: function() {
@@ -396,7 +419,7 @@ return view.extend({
             triggerBtn.innerHTML = '<span>⏳</span> <span>' + _('Checking...') + '</span>';
         }
 
-        var currentVer = '1.6-r1';
+        var currentVer = '1.6-r2';
         var repoUrl = 'https://github.com/MrManiesh/luci-app-speedtest-onyx';
 
         var doCheck = fs.exec(ACTION_SCRIPT, ['check_update']).then(function(res) {
@@ -1040,7 +1063,7 @@ return view.extend({
                     ]),
                     E('div', { 'style': 'color:var(--st-text-muted);font-size:13px;' }, [
                         _('Installed Version: '),
-                        E('strong', { 'style': 'color:var(--st-text-main);' }, 'v1.6-r1'),
+                        E('strong', { 'style': 'color:var(--st-text-main);' }, 'v1.6-r2'),
                         E('span', { 'style': 'margin:0 6px;' }, '•'),
                         E('a', {
                             'href': 'https://github.com/MrManiesh/luci-app-speedtest-onyx',
@@ -1236,7 +1259,7 @@ return view.extend({
             E('div', { 'style': 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;' }, [
                 E('span', {
                     'style': 'background:rgba(16,185,129,0.12);color:#059669;border:1px solid rgba(16,185,129,0.3);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700;'
-                }, 'v1.6-r1'),
+                }, 'v1.6-r2'),
                 btnHeaderCheckUpdate
             ])
         ]);
@@ -1620,37 +1643,87 @@ return view.extend({
             ])
         ]);
 
-        // 4. Packet Loss Card (Bottom-Right)
-        var resultBtn = E('a', {
-            'id': 'st-kpi-result-btn',
+        // 4. Ookla Result Card (Bottom-Right)
+        var btnOpenResult = E('a', {
+            'id': 'st-btn-open-result',
             'target': '_blank',
-            'style': 'display:none;margin-top:6px;font-size:11px;color:#0284c7;text-decoration:none;font-weight:700;align-items:center;gap:4px;'
+            'class': 'btn cbi-button cbi-button-action',
+            'style': 'display:none;background:linear-gradient(135deg, #0284c7 0%, #2563eb 100%);color:#fff;font-weight:700;padding:6px 14px;font-size:12px;border-radius:var(--st-card-radius);border:none;cursor:pointer;text-decoration:none;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(2,132,199,0.3);'
         }, [
-            E('span', {}, '🔗 View Ookla Result')
+            E('span', {}, '🌐'),
+            E('span', {}, _('Open Link'))
         ]);
 
-        var lossCard = E('div', {
+        var btnCopyResult = E('button', {
+            'id': 'st-btn-copy-result',
+            'class': 'btn cbi-button st-btn-sec',
+            'style': 'display:none;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;border-radius:var(--st-card-radius);align-items:center;gap:6px;'
+        }, [
+            E('span', {}, '📋'),
+            E('span', {}, _('Copy Link'))
+        ]);
+
+        btnCopyResult.addEventListener('click', function() {
+            var url = btnOpenResult.getAttribute('href') || self.activeResultUrl;
+            if (!url) return;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).then(function() {
+                    ui.addNotification(null, E('p', {}, _('Ookla speedtest link copied to clipboard!')), 3000);
+                });
+            } else {
+                var ta = document.createElement('textarea');
+                ta.value = url;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                ui.addNotification(null, E('p', {}, _('Ookla speedtest link copied to clipboard!')), 3000);
+            }
+        });
+
+        var resultCard = E('div', {
             'class': 'st-card',
             'style': 'padding:18px 20px;display:flex;flex-direction:column;justify-content:space-between;'
         }, [
-            E('div', { 'style': 'position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg, #4f46e5, #6366f1);' }),
+            E('div', { 'style': 'position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg, #4f46e5, #0284c7);' }),
             E('div', { 'style': 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;' }, [
-                E('span', { 'class': 'st-card-lbl' }, _('Packet Loss')),
-                E('span', { 'style': 'font-size:16px;color:#4f46e5;' }, '📦')
+                E('span', { 'class': 'st-card-lbl' }, _('Ookla Result Link')),
+                E('span', { 'style': 'font-size:16px;color:#0284c7;' }, '🔗')
             ]),
             E('div', {}, [
                 E('div', { 'style': 'display:flex;align-items:baseline;gap:6px;' }, [
-                    E('span', { 'id': 'st-kpi-loss-val', 'class': 'st-card-val' }, '--%')
+                    E('span', { 'id': 'st-kpi-result-val', 'class': 'st-card-val', 'style': 'font-size:22px;' }, '--')
                 ]),
-                E('div', { 'id': 'st-kpi-loss-sub', 'class': 'st-card-sub' }, _('Grade: --')),
-                resultBtn
+                E('div', { 'id': 'st-kpi-result-sub', 'class': 'st-card-sub' }, _('Waiting for test run')),
+                E('div', {
+                    'style': 'display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap;'
+                }, [
+                    btnOpenResult,
+                    btnCopyResult
+                ])
             ])
         ]);
+
+        if (Array.isArray(self.activeHistory) && self.activeHistory.length > 0 && self.activeHistory[0].result_url) {
+            self.activeResultUrl = self.activeHistory[0].result_url;
+            btnOpenResult.href = self.activeResultUrl;
+            btnOpenResult.style.display = 'inline-flex';
+            btnCopyResult.style.display = 'inline-flex';
+            var initValEl = resultCard.querySelector('#st-kpi-result-val');
+            var initSubEl = resultCard.querySelector('#st-kpi-result-sub');
+            if (initValEl) {
+                initValEl.textContent = _('Latest Test');
+                initValEl.style.color = '#10b981';
+            }
+            if (initSubEl) {
+                initSubEl.textContent = _('Official Speedtest.net report');
+            }
+        }
 
         cardsGrid.appendChild(pingCard);
         cardsGrid.appendChild(dlCard);
         cardsGrid.appendChild(ulCard);
-        cardsGrid.appendChild(lossCard);
+        cardsGrid.appendChild(resultCard);
 
         var graphicsSection = E('div', {
             'style': 'display:flex;flex-wrap:wrap;gap:18px;margin-bottom:22px;'

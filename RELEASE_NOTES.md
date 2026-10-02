@@ -1,6 +1,14 @@
-# Release v1.6-r1
+# Release v1.6-r2
 
 ## Speedtest Onyx Console for OpenWrt / ImmortalWrt
+### What's Changed in v1.6-r2:
+- **Dedicated Ookla Speedtest Result Link Card**:
+  - Replaced the packet loss metric card with a dedicated, high-visibility **Ookla Result Link** card.
+  - Added direct **🌐 Open Link** button to immediately view the official Speedtest.net benchmark certificate in a new browser tab.
+  - Added 1-click **📋 Copy Link** button with clipboard confirmation notification to easily share speed test results.
+  - Persists and displays the latest benchmark link automatically on dashboard load.
+
+### Included from v1.6-r1:
 - **Universal Multi-Architecture Engine Auto-Provisioning**:
   - Automatically identifies router CPU architecture (`aarch64`, `x86_64`, `armhf`, `armel`, `i386`, `mips`/`mipsel`).
   - Downloads and provisions the matching official Ookla Speedtest CLI binary (`v1.2.0`) dynamically on first test run.
