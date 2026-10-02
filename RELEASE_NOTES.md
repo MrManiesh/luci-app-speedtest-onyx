@@ -1,3 +1,18 @@
+# Release v1.6-r1
+
+## Speedtest Onyx Console for OpenWrt / ImmortalWrt
+- **Universal Multi-Architecture Engine Auto-Provisioning**:
+  - Automatically identifies router CPU architecture (`aarch64`, `x86_64`, `armhf`, `armel`, `i386`, `mips`/`mipsel`).
+  - Downloads and provisions the matching official Ookla Speedtest CLI binary (`v1.2.0`) dynamically on first test run.
+  - Automatically falls back to `speedtest-go` (`apk add speedtest-go`, `opkg install speedtest-go`, or precompiled binary) on MIPS routers where Ookla does not provide native builds.
+- **Interactive Setup Banner & 1-Click Installer in LuCI WebUI**:
+  - Displays a clean setup notice in the console with detected hardware architecture when the engine is not yet installed.
+  - Provides a 1-click **Install Engine Now** button that streams live download and extraction logs directly in the LuCI terminal.
+- **Resilient Error Handling & Safe Execution**:
+  - Start failures now output exact descriptive error messages into the terminal rather than silently failing.
+- **Fixed Server Selection Regex**:
+  - Corrected pattern backreferences in `speedtest-servers.sh` so nearby test servers are discovered and populated into the target server dropdown.
+
 # Release v1.5-r1
 
 ## Speedtest Onyx Console for OpenWrt / ImmortalWrt

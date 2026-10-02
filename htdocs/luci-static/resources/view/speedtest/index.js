@@ -396,7 +396,7 @@ return view.extend({
             triggerBtn.innerHTML = '<span>⏳</span> <span>' + _('Checking...') + '</span>';
         }
 
-        var currentVer = '1.5-r1';
+        var currentVer = '1.6-r1';
         var repoUrl = 'https://github.com/MrManiesh/luci-app-speedtest-onyx';
 
         var doCheck = fs.exec(ACTION_SCRIPT, ['check_update']).then(function(res) {
@@ -1040,7 +1040,7 @@ return view.extend({
                     ]),
                     E('div', { 'style': 'color:var(--st-text-muted);font-size:13px;' }, [
                         _('Installed Version: '),
-                        E('strong', { 'style': 'color:var(--st-text-main);' }, 'v1.5-r1'),
+                        E('strong', { 'style': 'color:var(--st-text-main);' }, 'v1.6-r1'),
                         E('span', { 'style': 'margin:0 6px;' }, '•'),
                         E('a', {
                             'href': 'https://github.com/MrManiesh/luci-app-speedtest-onyx',
@@ -1236,7 +1236,7 @@ return view.extend({
             E('div', { 'style': 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;' }, [
                 E('span', {
                     'style': 'background:rgba(16,185,129,0.12);color:#059669;border:1px solid rgba(16,185,129,0.3);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700;'
-                }, 'v1.5-r1'),
+                }, 'v1.6-r1'),
                 btnHeaderCheckUpdate
             ])
         ]);
@@ -1374,6 +1374,31 @@ return view.extend({
             'class': 'btn cbi-button st-btn-sec',
             'style': 'padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;'
         }, _('Copy Output'));
+
+        var engine = statusData.engine || {};
+        var btnInstallEngine = E('button', {
+            'id': 'st-btn-install-engine',
+            'class': 'btn cbi-button',
+            'style': 'background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%);color:#fff;font-weight:700;padding:6px 16px;font-size:12px;border-radius:var(--st-card-radius);border:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;'
+        }, [
+            E('span', {}, '⚡'),
+            E('span', {}, _('Install Engine Now'))
+        ]);
+
+        var engineBanner = E('div', {
+            'id': 'st-engine-banner',
+            'class': 'st-card',
+            'style': 'display:' + (engine.installed ? 'none' : 'flex') + ';align-items:center;justify-content:space-between;padding:12px 18px;margin-bottom:15px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:var(--st-card-radius);gap:12px;flex-wrap:wrap;'
+        }, [
+            E('div', { 'style': 'display:flex;align-items:center;gap:10px;' }, [
+                E('span', { 'style': 'font-size:20px;' }, '⚙️'),
+                E('div', {}, [
+                    E('div', { 'style': 'font-weight:700;color:var(--st-text-primary);font-size:13px;' }, _('Speedtest CLI Engine Not Installed')),
+                    E('div', { 'style': 'font-size:12px;color:var(--st-text-muted);' }, _('Architecture: ') + '<strong>' + (engine.arch || 'unknown') + '</strong>. ' + _('The engine will auto-install on your first test run, or you can install it now.'))
+                ])
+            ]),
+            btnInstallEngine
+        ]);
 
         var toolbar = E('div', {
             'class': 'st-card',
@@ -1665,6 +1690,7 @@ return view.extend({
             terminalPre
         ]);
 
+        paneConsole.appendChild(engineBanner);
         paneConsole.appendChild(toolbar);
         paneConsole.appendChild(graphicsSection);
         paneConsole.appendChild(terminalContainer);
@@ -1674,6 +1700,49 @@ return view.extend({
         viewContainer.appendChild(paneConsole);
         viewContainer.appendChild(paneHistory);
         viewContainer.appendChild(paneSettings);
+
+        // Install Engine Button Handler
+        btnInstallEngine.addEventListener('click', function() {
+            btnInstallEngine.disabled = true;
+            btnInstallEngine.textContent = _('Installing...');
+            terminalPre.textContent = 'root@OpenWrt:~# /usr/libexec/speedtest-action.sh install\n[*] Auto-provisioning Speedtest CLI engine...\n';
+            terminalPre.scrollTop = terminalPre.scrollHeight;
+            self.startLogPolling(terminalPre, btnStart, btnStop);
+
+            fs.exec(ACTION_SCRIPT, ['install']).then(function(res) {
+                btnInstallEngine.disabled = false;
+                var resp = {};
+                try {
+                    if (res && res.stdout) resp = JSON.parse(res.stdout.trim());
+                } catch (e) {}
+
+                if (resp && resp.status === 'ok') {
+                    ui.addNotification(null, E('p', {}, _('Speedtest engine installed successfully!')), 4000);
+                    engineBanner.style.display = 'none';
+                    fs.exec(SERVERS_SCRIPT, []).then(function(sRes) {
+                        try {
+                            if (sRes && sRes.stdout) {
+                                var newServers = JSON.parse(sRes.stdout.trim());
+                                if (Array.isArray(newServers) && newServers.length > 0) {
+                                    while (serverSelect.options.length > 1) serverSelect.remove(1);
+                                    newServers.forEach(function(s) {
+                                        var opt = E('option', { 'value': String(s.id) }, '[' + s.id + '] ' + (s.name || s.sponsor || 'Server') + ' (' + (s.location || '') + (s.country ? ', ' + s.country : '') + ')');
+                                        serverSelect.appendChild(opt);
+                                    });
+                                }
+                            }
+                        } catch (e) {}
+                    });
+                } else {
+                    btnInstallEngine.textContent = _('Install Engine Now');
+                    ui.addNotification(null, E('p', {}, _('Installation error: ') + (resp.message || _('Failed to install'))), 6000);
+                }
+            }).catch(function(err) {
+                btnInstallEngine.disabled = false;
+                btnInstallEngine.textContent = _('Install Engine Now');
+                ui.addNotification(null, E('p', {}, _('Failed: ') + (err.message || err)), 6000);
+            });
+        });
 
         // Terminal Button Handlers
         btnStart.addEventListener('click', function() {
@@ -1687,7 +1756,21 @@ return view.extend({
             terminalPre.textContent = 'root@OpenWrt:~# speedtest' + (selectedSrv && selectedSrv !== 'auto' ? ' -s ' + selectedSrv : '') + '\n';
             terminalPre.scrollTop = terminalPre.scrollHeight;
 
-            fs.exec(ACTION_SCRIPT, ['start', selectedSrv]).then(function() {
+            fs.exec(ACTION_SCRIPT, ['start', selectedSrv]).then(function(res) {
+                var resp = {};
+                try {
+                    if (res && res.stdout) resp = JSON.parse(res.stdout.trim());
+                } catch (e) {}
+
+                if (resp && resp.status === 'error') {
+                    terminalPre.textContent += '\n[Error] ' + (resp.message || 'Failed to start speedtest') + '\n';
+                    btnStart.style.display = 'inline-flex';
+                    btnStop.style.display = 'none';
+                    self.isRunning = false;
+                    return;
+                }
+
+                if (engineBanner) engineBanner.style.display = 'none';
                 self.startLogPolling(terminalPre, btnStart, btnStop);
             }).catch(function(err) {
                 terminalPre.textContent += '\n[Error] Failed to start speedtest: ' + (err.message || err) + '\n';

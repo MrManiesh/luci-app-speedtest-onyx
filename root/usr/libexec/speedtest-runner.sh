@@ -24,21 +24,212 @@ if [ -z "$SERVER_ARG" ]; then
 fi
 [ "$SERVER_ARG" = "auto" ] && SERVER_ARG=""
 
-# Find speedtest binary
-SPEEDTEST_BIN=""
-if [ -x /usr/bin/speedtest ]; then
-	SPEEDTEST_BIN="/usr/bin/speedtest"
-elif command -v speedtest >/dev/null 2>&1; then
-	SPEEDTEST_BIN=$(command -v speedtest)
-elif [ -x /usr/bin/speedtest-go ]; then
-	SPEEDTEST_BIN="/usr/bin/speedtest-go"
-elif command -v speedtest-go >/dev/null 2>&1; then
-	SPEEDTEST_BIN=$(command -v speedtest-go)
+detect_pkg_mgr() {
+	if command -v apk >/dev/null 2>&1; then
+		echo "apk"
+	elif command -v opkg >/dev/null 2>&1; then
+		echo "opkg"
+	else
+		echo ""
+	fi
+}
+
+download_file() {
+	_url="$1"
+	_dest="$2"
+	rm -f "$_dest"
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSL -k --connect-timeout 15 --max-time 120 -o "$_dest" "$_url" 2>&1
+		return $?
+	elif command -v uclient-fetch >/dev/null 2>&1; then
+		uclient-fetch --no-check-certificate -O "$_dest" "$_url" 2>&1
+		return $?
+	elif command -v wget >/dev/null 2>&1; then
+		wget --no-check-certificate -q -O "$_dest" "$_url" 2>&1
+		return $?
+	fi
+	return 1
+}
+
+find_speedtest() {
+	for p in /usr/bin/speedtest /usr/bin/speedtest-go /usr/local/bin/speedtest /usr/local/bin/speedtest-go; do
+		if [ -f "$p" ]; then
+			[ ! -x "$p" ] && chmod 0755 "$p" 2>/dev/null || true
+			if [ -x "$p" ]; then
+				if "$p" --version >/dev/null 2>&1 || "$p" -v >/dev/null 2>&1; then
+					echo "$p"
+					return 0
+				fi
+			fi
+		fi
+	done
+	if command -v speedtest >/dev/null 2>&1; then
+		if speedtest --version >/dev/null 2>&1; then
+			echo "$(command -v speedtest)"
+			return 0
+		fi
+	fi
+	if command -v speedtest-go >/dev/null 2>&1; then
+		if speedtest-go -v >/dev/null 2>&1; then
+			echo "$(command -v speedtest-go)"
+			return 0
+		fi
+	fi
+	echo ""
+}
+
+install_speedtest_engine() {
+	_log="$1"
+	[ -z "$_log" ] && _log="$EXEC_LOG"
+
+	echo "================================================================" >> "$_log"
+	echo " Speedtest Engine Auto-Provisioning" >> "$_log"
+	
+	ARCH=$(uname -m 2>/dev/null || echo "unknown")
+	echo " [*] Detected Hardware Architecture: $ARCH" >> "$_log"
+
+	OOKLA_URL=""
+	FALLBACK_URL=""
+
+	case "$ARCH" in
+		x86_64|amd64)
+			OOKLA_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-x86_64.tgz"
+			;;
+		i386|i486|i586|i686|x86)
+			OOKLA_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-i386.tgz"
+			;;
+		aarch64*|arm64*|armv8*)
+			OOKLA_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-aarch64.tgz"
+			;;
+		armv7*|armv6*|armhf)
+			OOKLA_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-armhf.tgz"
+			FALLBACK_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-armel.tgz"
+			;;
+		arm*|armel)
+			OOKLA_URL="https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-armel.tgz"
+			;;
+	esac
+
+	# Step 1: If architecture is supported by Ookla CLI, download and extract
+	if [ -n "$OOKLA_URL" ]; then
+		echo " [*] Downloading official Ookla Speedtest CLI ($ARCH)..." >> "$_log"
+		echo "     Source: $OOKLA_URL" >> "$_log"
+		TMP_TGZ="/tmp/ookla-speedtest.tgz"
+		if download_file "$OOKLA_URL" "$TMP_TGZ"; then
+			echo " [*] Extracting binary to /usr/bin/speedtest..." >> "$_log"
+			tar -xzf "$TMP_TGZ" -C /tmp/ speedtest 2>/dev/null || tar -xzf "$TMP_TGZ" -C /tmp/ 2>/dev/null
+			rm -f "$TMP_TGZ" /tmp/speedtest.md /tmp/speedtest.5 2>/dev/null
+
+			if [ -f /tmp/speedtest ]; then
+				mv -f /tmp/speedtest /usr/bin/speedtest
+				chmod 0755 /usr/bin/speedtest
+				
+				if /usr/bin/speedtest --version >/dev/null 2>&1; then
+					VER=$(/usr/bin/speedtest --version 2>&1 | head -n 1)
+					echo " [✓] Official Ookla Speedtest CLI installed successfully!" >> "$_log"
+					echo "     Version: $VER" >> "$_log"
+					echo "================================================================" >> "$_log"
+					echo "" >> "$_log"
+					return 0
+				elif [ -n "$FALLBACK_URL" ]; then
+					echo " [!] Primary ARM binary incompatible, attempting ARMEL fallback..." >> "$_log"
+					rm -f /usr/bin/speedtest
+					if download_file "$FALLBACK_URL" "$TMP_TGZ"; then
+						tar -xzf "$TMP_TGZ" -C /tmp/ speedtest 2>/dev/null || tar -xzf "$TMP_TGZ" -C /tmp/ 2>/dev/null
+						rm -f "$TMP_TGZ" /tmp/speedtest.md /tmp/speedtest.5 2>/dev/null
+						if [ -f /tmp/speedtest ]; then
+							mv -f /tmp/speedtest /usr/bin/speedtest
+							chmod 0755 /usr/bin/speedtest
+							if /usr/bin/speedtest --version >/dev/null 2>&1; then
+								VER=$(/usr/bin/speedtest --version 2>&1 | head -n 1)
+								echo " [✓] Official Ookla Speedtest CLI installed successfully!" >> "$_log"
+								echo "     Version: $VER" >> "$_log"
+								echo "================================================================" >> "$_log"
+								echo "" >> "$_log"
+								return 0
+							fi
+						fi
+					fi
+				fi
+			fi
+		fi
+		echo " [!] Ookla CLI setup failed. Falling back to speedtest-go..." >> "$_log"
+	fi
+
+	# Step 2: Fallback to speedtest-go (package manager or prebuilt binary)
+	echo " [*] Attempting to install speedtest-go engine..." >> "$_log"
+	PKG_MGR=$(detect_pkg_mgr)
+	if [ "$PKG_MGR" = "apk" ]; then
+		echo " [*] Running: apk update && apk add speedtest-go" >> "$_log"
+		apk update >> "$_log" 2>&1 || true
+		apk add speedtest-go >> "$_log" 2>&1 || true
+	elif [ "$PKG_MGR" = "opkg" ]; then
+		echo " [*] Running: opkg update && opkg install speedtest-go" >> "$_log"
+		opkg update >> "$_log" 2>&1 || true
+		opkg install speedtest-go >> "$_log" 2>&1 || true
+	fi
+
+	BIN=$(find_speedtest)
+	if [ -n "$BIN" ]; then
+		VER=$("$BIN" --version 2>&1 | head -n 1)
+		[ -z "$VER" ] && VER=$("$BIN" -v 2>&1 | head -n 1)
+		echo " [✓] Speedtest engine installed successfully via $PKG_MGR ($BIN)!" >> "$_log"
+		echo "     Version: $VER" >> "$_log"
+		echo "================================================================" >> "$_log"
+		echo "" >> "$_log"
+		return 0
+	fi
+
+	# Step 3: Precompiled speedtest-go binary for MIPS/other from GitHub
+	MIPS_GO_ARCH=""
+	case "$ARCH" in
+		mips|mipsbe) MIPS_GO_ARCH="mips" ;;
+		mipsel|mipsle) MIPS_GO_ARCH="mipsle" ;;
+		mips64) MIPS_GO_ARCH="mips64" ;;
+		mips64le) MIPS_GO_ARCH="mips64le" ;;
+	esac
+
+	if [ -n "$MIPS_GO_ARCH" ]; then
+		SGO_URL="https://github.com/showwin/speedtest-go/releases/download/v1.7.10/speedtest-go_1.7.10_Linux_${MIPS_GO_ARCH}.tar.gz"
+		echo " [*] Downloading precompiled speedtest-go ($MIPS_GO_ARCH)..." >> "$_log"
+		TMP_SGO="/tmp/speedtest-go.tar.gz"
+		if download_file "$SGO_URL" "$TMP_SGO"; then
+			tar -xzf "$TMP_SGO" -C /tmp/ speedtest-go 2>/dev/null || tar -xzf "$TMP_SGO" -C /tmp/ 2>/dev/null
+			rm -f "$TMP_SGO"
+			if [ -f /tmp/speedtest-go ]; then
+				mv -f /tmp/speedtest-go /usr/bin/speedtest-go
+				chmod 0755 /usr/bin/speedtest-go
+				if /usr/bin/speedtest-go -v >/dev/null 2>&1; then
+					echo " [✓] Precompiled speedtest-go installed successfully!" >> "$_log"
+					echo "================================================================" >> "$_log"
+					echo "" >> "$_log"
+					return 0
+				fi
+			fi
+		fi
+	fi
+
+	# If all failed:
+	HINT="apk add speedtest-go"
+	[ "$PKG_MGR" = "opkg" ] && HINT="opkg update && opkg install speedtest-go"
+	echo "" >> "$_log"
+	echo " [x] Engine installation could not complete automatically." >> "$_log"
+	echo "     Please connect to your router via SSH and run:" >> "$_log"
+	echo "     $HINT" >> "$_log"
+	echo "================================================================" >> "$_log"
+	echo "" >> "$_log"
+	return 1
+}
+
+# Find speedtest binary; auto-provision if missing
+SPEEDTEST_BIN=$(find_speedtest)
+if [ -z "$SPEEDTEST_BIN" ] || [ ! -x "$SPEEDTEST_BIN" ]; then
+	install_speedtest_engine "$EXEC_LOG"
+	SPEEDTEST_BIN=$(find_speedtest)
 fi
 
 if [ -z "$SPEEDTEST_BIN" ] || [ ! -x "$SPEEDTEST_BIN" ]; then
-	echo "[Error] Speedtest binary not found on router. Please install speedtest-go using:" >> "$EXEC_LOG"
-	echo "        apk add speedtest-go" >> "$EXEC_LOG"
+	echo "[Error] Speedtest binary not found and could not be installed automatically." >> "$EXEC_LOG"
 	exit 1
 fi
 

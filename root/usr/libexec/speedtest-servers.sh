@@ -14,7 +14,30 @@ if [ -f "$CACHE_FILE" ]; then
 	fi
 fi
 
-# Try speedtest-go first if available
+# Try Ookla CLI first if available
+SPEEDTEST_BIN=""
+if [ -x /usr/bin/speedtest ]; then
+	SPEEDTEST_BIN="/usr/bin/speedtest"
+elif command -v speedtest >/dev/null 2>&1; then
+	SPEEDTEST_BIN=$(command -v speedtest)
+fi
+
+if [ -n "$SPEEDTEST_BIN" ] && [ -x "$SPEEDTEST_BIN" ]; then
+	SERVERS_JSON=$("$SPEEDTEST_BIN" -L --format=json --accept-license --accept-gdpr 2>/dev/null)
+	if [ -n "$SERVERS_JSON" ] && echo "$SERVERS_JSON" | grep -q '"servers"'; then
+		if command -v jq >/dev/null 2>&1; then
+			echo "$SERVERS_JSON" | jq '.servers // []' 2>/dev/null > "$CACHE_FILE"
+		else
+			echo "$SERVERS_JSON" | sed -n 's/.*"servers":\(\[[^]]*\]\).*/\1/p' > "$CACHE_FILE"
+		fi
+		if [ -s "$CACHE_FILE" ]; then
+			cat "$CACHE_FILE"
+			exit 0
+		fi
+	fi
+fi
+
+# Fallback to speedtest-go if available
 if command -v speedtest-go >/dev/null 2>&1 || [ -x /usr/bin/speedtest-go ]; then
 	SGO=$(command -v speedtest-go 2>/dev/null || echo "/usr/bin/speedtest-go")
 	RAW=$("$SGO" -l 2>/dev/null)
@@ -22,14 +45,14 @@ if command -v speedtest-go >/dev/null 2>&1 || [ -x /usr/bin/speedtest-go ]; then
 		TMP_JSON="["
 		first=1
 		echo "$RAW" | grep '^[ 	]*\[' | head -n 30 | while IFS= read -r line; do
-			sid=$(echo "$line" | sed -n 's/^[ 	]*\[ *\([0-9]*\)\]\([^k]*\)km *\([^m]*\)ms *\(.*\) by *\(.*\)//p')
+			sid=$(echo "$line" | sed -n 's/^[ 	]*\[ *\([0-9]*\)\]\([^k]*\)km *\([^m]*\)ms *\(.*\) by *\(.*\)/\1/p')
 			[ -z "$sid" ] && continue
-			sloc=$(echo "$line" | sed -n 's/^[ 	]*\[ *\([0-9]*\)\]\([^k]*\)km *\([^m]*\)ms *\(.*\) by *\(.*\)//p' | sed 's/[ 	]*$//')
-			sname=$(echo "$line" | sed -n 's/^[ 	]*\[ *\([0-9]*\)\]\([^k]*\)km *\([^m]*\)ms *\(.*\) by *\(.*\)//p' | sed 's/[ 	]*$//')
+			sloc=$(echo "$line" | sed -n 's/^[ 	]*\[ *\([0-9]*\)\]\([^k]*\)km *\([^m]*\)ms *\(.*\) by *\(.*\)/\5/p' | sed 's/[ 	]*$//')
+			sname=$(echo "$line" | sed -n 's/^[ 	]*\[ *\([0-9]*\)\]\([^k]*\)km *\([^m]*\)ms *\(.*\) by *\(.*\)/\4/p' | sed 's/[ 	]*$//')
 			scountry=""
 			if echo "$sloc" | grep -q '('; then
-				scountry=$(echo "$sloc" | sed -n 's/.*(\([^)]*\)).*//p')
-				sloc=$(echo "$sloc" | sed -n 's/\(.*\) *(.*)//p' | sed 's/[ 	]*$//')
+				scountry=$(echo "$sloc" | sed -n 's/.*(\([^)]*\)).*/\1/p')
+				sloc=$(echo "$sloc" | sed -n 's/\(.*\) *(.*)/\1/p' | sed 's/[ 	]*$//')
 			fi
 			if [ "$first" = "1" ]; then
 				TMP_JSON="$TMP_JSON{\"id\":$sid,\"name\":\"$sname\",\"location\":\"$sloc\",\"country\":\"$scountry\"}"
@@ -41,25 +64,6 @@ if command -v speedtest-go >/dev/null 2>&1 || [ -x /usr/bin/speedtest-go ]; then
 		TMP_JSON="$TMP_JSON]"
 		if [ "$TMP_JSON" != "[]" ] && [ -n "$TMP_JSON" ]; then
 			echo "$TMP_JSON" > "$CACHE_FILE"
-			cat "$CACHE_FILE"
-			exit 0
-		fi
-	fi
-fi
-
-# Fallback to Ookla CLI if available
-SPEEDTEST_BIN="/usr/bin/speedtest"
-[ ! -x "$SPEEDTEST_BIN" ] && SPEEDTEST_BIN=$(command -v speedtest 2>/dev/null)
-
-if [ -n "$SPEEDTEST_BIN" ] && [ -x "$SPEEDTEST_BIN" ]; then
-	SERVERS_JSON=$("$SPEEDTEST_BIN" -L --format=json --accept-license --accept-gdpr 2>/dev/null)
-	if [ -n "$SERVERS_JSON" ] && echo "$SERVERS_JSON" | grep -q '"servers"'; then
-		if command -v jq >/dev/null 2>&1; then
-			echo "$SERVERS_JSON" | jq '.servers // []' 2>/dev/null > "$CACHE_FILE"
-		else
-			echo "$SERVERS_JSON" | sed -n 's/.*"servers":\(\[[^]]*\]\).*//p' > "$CACHE_FILE"
-		fi
-		if [ -s "$CACHE_FILE" ]; then
 			cat "$CACHE_FILE"
 			exit 0
 		fi
