@@ -1902,8 +1902,37 @@ return view.extend({
         var self = this;
         if (self.terminalPoll) return;
 
+        // Single entry-point for finalizing a completed/stopped test
+        function finalizeTest() {
+            if (!self.isRunning) return;
+            self.isRunning = false;
+            self.stopLogPolling();
+            if (btnStart) btnStart.style.display = 'inline-flex';
+            if (btnStop) { btnStop.style.display = 'none'; btnStop.disabled = false; }
+
+            fs.exec(ACTION_SCRIPT, ['history']).then(function(hRes) {
+                try {
+                    if (hRes && hRes.stdout) {
+                        var h = JSON.parse(hRes.stdout.trim());
+                        if (Array.isArray(h)) self.activeHistory = h;
+                    }
+                } catch (e) {}
+                var count = Array.isArray(self.activeHistory) ? self.activeHistory.length : 0;
+                var badge = document.getElementById('st-history-count-badge');
+                if (badge) {
+                    badge.textContent = String(count);
+                    badge.style.display = count > 0 ? 'inline-block' : 'none';
+                }
+                if (self.activeTab === 'history') {
+                    var ph = document.getElementById('st-pane-history');
+                    if (ph) self.renderHistoryView(ph);
+                }
+            }).catch(function() {});
+        }
+
         self.terminalPoll = poll.add(function() {
-            return fs.exec(ACTION_SCRIPT, ['log']).then(function(res) {
+            // Run log and status fetches in parallel so neither blocks the other
+            var logPromise = fs.exec(ACTION_SCRIPT, ['log']).then(function(res) {
                 var text = (res && res.stdout) ? res.stdout : '';
                 if (text && text !== self.lastLogContent) {
                     self.lastLogContent = text;
@@ -1913,42 +1942,36 @@ return view.extend({
                     }
                     var parsed = self.parseLogStream(text);
                     self.renderTelemetry(parsed);
-                }
 
-                return fs.exec(ACTION_SCRIPT, ['status']).then(function(sRes) {
-                    var sData = {};
-                    try {
-                        if (sRes && sRes.stdout) sData = JSON.parse(sRes.stdout.trim());
-                    } catch (e) {}
-
-                    if (!sData.running && self.isRunning) {
-                        self.stopLogPolling();
-                        self.isRunning = false;
-                        if (btnStart) btnStart.style.display = 'inline-flex';
-                        if (btnStop) btnStop.style.display = 'none';
-
-                        fs.exec(ACTION_SCRIPT, ['history']).then(function(hRes) {
-                            try {
-                                if (hRes && hRes.stdout) {
-                                    var parsed = JSON.parse(hRes.stdout.trim());
-                                    if (Array.isArray(parsed)) {
-                                        self.activeHistory = parsed;
-                                    }
-                                }
-                                var count = (Array.isArray(self.activeHistory) ? self.activeHistory.length : 0);
-                                var countBadge = document.getElementById('st-history-count-badge');
-                                if (countBadge) {
-                                    countBadge.textContent = String(count);
-                                    countBadge.style.display = (count > 0 ? 'inline-block' : 'none');
-                                }
-                                if (self.activeTab === 'history') {
-                                    self.renderHistoryView(paneHistory);
-                                }
-                            } catch (e) {}
-                        });
+                    // Secondary completion detector: scan log for completion markers.
+                    // Catches cases where status API may be slow to update the lock file.
+                    if (self.isRunning && (
+                        text.indexOf('Result URL:') !== -1 ||
+                        text.indexOf('completed successfully') !== -1 ||
+                        text.indexOf('[✓] Speed test completed') !== -1
+                    )) {
+                        // Give 1.5 s for the runner to finish writing and remove the lock,
+                        // then finalize regardless of what status says.
+                        setTimeout(function() {
+                            finalizeTest();
+                        }, 1500);
                     }
-                });
+                }
             }).catch(function() {});
+
+            var statusPromise = fs.exec(ACTION_SCRIPT, ['status']).then(function(sRes) {
+                var sData = {};
+                try {
+                    if (sRes && sRes.stdout) sData = JSON.parse(sRes.stdout.trim());
+                } catch (e) {}
+
+                // sData.running is 0 (number) when idle; also guard against parse failure
+                if (self.isRunning && !sData.running) {
+                    finalizeTest();
+                }
+            }).catch(function() {});
+
+            return Promise.all([logPromise, statusPromise]);
         }, 1);
     },
 
