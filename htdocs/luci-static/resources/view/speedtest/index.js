@@ -1921,11 +1921,11 @@ return view.extend({
                         if (sRes && sRes.stdout) sData = JSON.parse(sRes.stdout.trim());
                     } catch (e) {}
 
-                    if (sData.running === 0) {
+                    if (!sData.running && self.isRunning) {
                         self.stopLogPolling();
+                        self.isRunning = false;
                         if (btnStart) btnStart.style.display = 'inline-flex';
                         if (btnStop) btnStop.style.display = 'none';
-                        self.isRunning = false;
 
                         fs.exec(ACTION_SCRIPT, ['history']).then(function(hRes) {
                             try {
