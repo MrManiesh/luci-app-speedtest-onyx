@@ -1910,24 +1910,28 @@ return view.extend({
             if (btnStart) btnStart.style.display = 'inline-flex';
             if (btnStop) { btnStop.style.display = 'none'; btnStop.disabled = false; }
 
-            fs.exec(ACTION_SCRIPT, ['history']).then(function(hRes) {
-                try {
-                    if (hRes && hRes.stdout) {
-                        var h = JSON.parse(hRes.stdout.trim());
-                        if (Array.isArray(h)) self.activeHistory = h;
+            // Delay history fetch 2.5s so the runner has time to finish
+            // writing results to disk before we read the history file.
+            setTimeout(function() {
+                fs.exec(ACTION_SCRIPT, ['history']).then(function(hRes) {
+                    try {
+                        if (hRes && hRes.stdout) {
+                            var h = JSON.parse(hRes.stdout.trim());
+                            if (Array.isArray(h)) self.activeHistory = h;
+                        }
+                    } catch (e) {}
+                    var count = Array.isArray(self.activeHistory) ? self.activeHistory.length : 0;
+                    var badge = document.getElementById('st-history-count-badge');
+                    if (badge) {
+                        badge.textContent = String(count);
+                        badge.style.display = count > 0 ? 'inline-block' : 'none';
                     }
-                } catch (e) {}
-                var count = Array.isArray(self.activeHistory) ? self.activeHistory.length : 0;
-                var badge = document.getElementById('st-history-count-badge');
-                if (badge) {
-                    badge.textContent = String(count);
-                    badge.style.display = count > 0 ? 'inline-block' : 'none';
-                }
-                if (self.activeTab === 'history') {
-                    var ph = document.getElementById('st-pane-history');
-                    if (ph) self.renderHistoryView(ph);
-                }
-            }).catch(function() {});
+                    if (self.activeTab === 'history') {
+                        var ph = document.getElementById('st-pane-history');
+                        if (ph) self.renderHistoryView(ph);
+                    }
+                }).catch(function() {});
+            }, 2500);
         }
 
         self.terminalPoll = poll.add(function() {
@@ -1942,20 +1946,18 @@ return view.extend({
                     }
                     var parsed = self.parseLogStream(text);
                     self.renderTelemetry(parsed);
+                }
 
-                    // Secondary completion detector: scan log for completion markers.
-                    // Catches cases where status API may be slow to update the lock file.
-                    if (self.isRunning && (
-                        text.indexOf('Result URL:') !== -1 ||
-                        text.indexOf('completed successfully') !== -1 ||
-                        text.indexOf('[✓] Speed test completed') !== -1
-                    )) {
-                        // Give 1.5 s for the runner to finish writing and remove the lock,
-                        // then finalize regardless of what status says.
-                        setTimeout(function() {
-                            finalizeTest();
-                        }, 1500);
-                    }
+                // Completion check runs on EVERY tick on the current text — NOT
+                // inside the content-changed block — so even a cached (unchanged)
+                // log still triggers finalization the moment the marker is present.
+                // finalizeTest() is idempotent so duplicate calls are safe.
+                if (self.isRunning && text && (
+                    text.indexOf('Result URL:') !== -1 ||
+                    text.indexOf('completed successfully') !== -1 ||
+                    text.indexOf('[x] Speed test exited') !== -1
+                )) {
+                    finalizeTest();
                 }
             }).catch(function() {});
 
